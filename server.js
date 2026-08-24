@@ -285,6 +285,57 @@ app.post('/api/orders/full', async (req, res) => {
   }
 });
 
+// --- Meta WhatsApp Webhook Integration ---
+
+// GET endpoint for webhook verification (Meta requirement)
+app.get('/api/webhook', (req, res) => {
+  // Your verify token. Meta uses this to ensure they are talking to your server.
+  // We recommend setting this in your Render environment variables later.
+  const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || 'releaf_whatsapp_token_123';
+
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  if (mode && token) {
+    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+      console.log('WEBHOOK_VERIFIED');
+      res.status(200).send(challenge);
+    } else {
+      res.sendStatus(403);
+    }
+  } else {
+    res.status(400).send('Invalid verification request');
+  }
+});
+
+// POST endpoint to receive messages/events from WhatsApp
+app.post('/api/webhook', (req, res) => {
+  const body = req.body;
+
+  console.log('Received WhatsApp Webhook event:', JSON.stringify(body, null, 2));
+
+  if (body.object) {
+    if (
+      body.entry && 
+      body.entry[0].changes && 
+      body.entry[0].changes[0] && 
+      body.entry[0].changes[0].value.messages && 
+      body.entry[0].changes[0].value.messages[0]
+    ) {
+      const from = body.entry[0].changes[0].value.messages[0].from; // sender's phone number
+      const msgBody = body.entry[0].changes[0].value.messages[0].text?.body; // text message
+      
+      console.log(`Received message from ${from}: ${msgBody}`);
+      // Add logic to save to database or trigger automated replies here
+    }
+    // Acknowledge receipt to Meta
+    res.sendStatus(200);
+  } else {
+    res.sendStatus(404);
+  }
+});
+
 // Sync database on startup
 syncDatabase().then(() => {
   const port = process.env.PORT || 5000;
