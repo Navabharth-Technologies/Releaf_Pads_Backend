@@ -12,11 +12,19 @@ app.get('/', (req, res) => {
   res.send('ReLeaf Pads Backend is successfully running with PostgreSQL!');
 });
 
-// Get all products
+// Get Products
 app.get('/api/products', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM Product');
-    res.json(result.rows);
+    const mapped = result.rows.map(p => ({
+      ...p,
+      packSize: p.packsize,
+      sellingPrice: p.sellingprice,
+      imageFallback: p.imagefallback,
+      stockStatus: p.stockstatus,
+      totalSold: p.totalsold
+    }));
+    res.json(mapped);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
