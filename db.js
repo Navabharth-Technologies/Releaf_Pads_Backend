@@ -1,5 +1,10 @@
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
 require('dotenv').config();
+
+// Tell pg to return numeric/decimal values as floats instead of strings
+types.setTypeParser(1700, function(val) {
+  return parseFloat(val);
+});
 
 const connString = process.env.DATABASE_URL || 
   process.env.Internal_Database_URL || 
