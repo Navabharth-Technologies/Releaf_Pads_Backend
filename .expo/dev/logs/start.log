@@ -1,0 +1,7 @@
+{"_e":"root:init","_t":1786939848888,"format":"v0-jsonl","version":"57.0.14"}
+{"_e":"env:mode","_t":1786939848890,"nodeEnv":"development","babelEnv":"development","mode":"development"}
+{"_e":"env:load","_t":1786939848901,"mode":"development","files":["../..\\..\\.env"],"env":{"DB_NAME":"Releaf_Pads","DB_PASSWORD":"Sql@123456","DB_PORT":"1433","DB_SERVER":"localhost","DB_USER":"sa","PORT":"5000"}}
+{"_e":"devserver:start","_t":1786939849660,"mode":"development","web":true,"baseUrl":"","asyncRoutes":false,"routerRoot":"../..\\..\\app","serverComponents":false,"serverActions":false,"serverRendering":false,"apiRoutes":false,"exporting":false}
+{"_e":"metro:config","_t":1786939850643,"serverRoot":"../..\\..","projectRoot":"../..\\..","exporting":false,"flags":{"autolinkingModuleResolution":false,"serverActions":false,"serverComponents":false,"reactCompiler":false,"optimizeGraph":false,"treeshaking":false,"logbox":false}}
+{"_e":"expo:dev-tools-plugin:load","_t":1786939851582,"plugins":[]}
+{"_e":"metro:instantiate","_t":1786939855120,"atlas":false,"workers":10,"host":"::","port":8081}
