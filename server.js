@@ -336,6 +336,190 @@ app.post('/api/webhook', (req, res) => {
   }
 });
 
+// --- Razorpay Payment Integration ---
+const Razorpay = require('razorpay');
+const crypto = require('crypto');
+
+// Health Check
+app.get('/health', (req, res) => {
+  res.json({
+    success: true,
+    service: "ReLeaf Pads API",
+    status: "healthy"
+  });
+});
+
+app.post('/api/payments/create-order', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { orderId } = req.body;
+    
+    // 1. Fetch order from DB
+    const orderResult = await client.query('SELECT * FROM "Order" WHERE id = $1', [orderId]);
+    if (orderResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+    const order = orderResult.rows[0];
+    
+    // 2. Prevent paying an already paid order
+    if (order.paymentstatus === 'PAID') {
+      return res.status(400).json({ success: false, message: 'Order is already paid' });
+    }
+    
+    // In a full production app, you would recalculate the order.total here based on product prices.
+    // Assuming order.total in DB is verified and trusted.
+    const amountInPaise = Math.round(parseFloat(order.total) * 100);
+    
+    // 3. Initialize Razorpay
+    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+      return res.status(500).json({ success: false, message: 'Razorpay credentials not configured on server' });
+    }
+    
+    const razorpay = new Razorpay({
+      key_id: process.env.RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET,
+    });
+    
+    // 4. Create Razorpay Order
+    const options = {
+      amount: amountInPaise,
+      currency: "INR",
+      receipt: orderId
+    };
+    
+    const razorpayOrder = await razorpay.orders.create(options);
+    
+    // 5. Save Razorpay Order ID to our DB
+    await client.query(
+      'UPDATE "Order" SET razorpayOrderId = $1, paymentStatus = $2 WHERE id = $3',
+      [razorpayOrder.id, 'PENDING', orderId]
+    );
+    
+    res.json({
+      success: true,
+      razorpayOrderId: razorpayOrder.id,
+      amount: amountInPaise,
+      currency: "INR",
+      keyId: process.env.RAZORPAY_KEY_ID
+    });
+    
+  } catch (err) {
+    console.error("Razorpay order creation error:", err);
+    res.status(500).json({ success: false, message: "Payment could not be initiated" });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/payments/razorpay/webhook', async (req, res) => {
+  const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+  
+  if (!secret) {
+    return res.status(500).json({ success: false, message: "Webhook secret not configured" });
+  }
+
+  const shasum = crypto.createHmac('sha256', secret);
+  shasum.update(JSON.stringify(req.body));
+  const digest = shasum.digest('hex');
+
+  if (digest !== req.headers['x-razorpay-signature']) {
+    return res.status(400).json({ success: false, message: "Invalid signature" });
+  }
+
+  const event = req.body.event;
+  const payload = req.body.payload;
+  const client = await pool.connect();
+  
+  try {
+    if (event === 'payment.captured' || event === 'order.paid') {
+      const paymentEntity = payload.payment.entity;
+      const razorpayOrderId = paymentEntity.order_id;
+      const razorpayPaymentId = paymentEntity.id;
+      
+      // Update order to PAID
+      await client.query(`
+        UPDATE "Order" 
+        SET paymentStatus = 'PAID', 
+            razorpayPaymentId = $1,
+            paymentVerifiedAt = NOW()
+        WHERE razorpayOrderId = $2 AND paymentStatus != 'PAID'
+      `, [razorpayPaymentId, razorpayOrderId]);
+      
+      console.log(`Order with Razorpay ID ${razorpayOrderId} marked as PAID via Webhook.`);
+    } else if (event === 'payment.failed') {
+      const paymentEntity = payload.payment.entity;
+      const razorpayOrderId = paymentEntity.order_id;
+      
+      // Update order to FAILED
+      await client.query(`
+        UPDATE "Order" 
+        SET paymentStatus = 'FAILED'
+        WHERE razorpayOrderId = $1 AND paymentStatus = 'PENDING'
+      `, [razorpayOrderId]);
+      
+      console.log(`Order with Razorpay ID ${razorpayOrderId} marked as FAILED via Webhook.`);
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Webhook processing error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/payments/verify', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { orderId, razorpayPaymentId, razorpayOrderId, razorpaySignature } = req.body;
+    
+    const secret = process.env.RAZORPAY_KEY_SECRET;
+    const body = razorpayOrderId + "|" + razorpayPaymentId;
+    const expectedSignature = crypto.createHmac('sha256', secret).update(body.toString()).digest('hex');
+    
+    if (expectedSignature === razorpaySignature) {
+      await client.query(`
+        UPDATE "Order" 
+        SET paymentStatus = 'PAID', 
+            razorpayPaymentId = $1,
+            razorpaySignature = $2,
+            paymentVerifiedAt = NOW()
+        WHERE id = $3
+      `, [razorpayPaymentId, razorpaySignature, orderId]);
+      
+      res.json({ success: true });
+    } else {
+      await client.query(`UPDATE "Order" SET paymentStatus = 'FAILED' WHERE id = $1`, [orderId]);
+      res.status(400).json({ success: false, message: "Invalid signature" });
+    }
+  } catch (err) {
+    console.error("Payment verification error:", err);
+    res.status(500).json({ success: false, message: "Payment verification failed" });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/payments/:orderId/status', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const result = await pool.query('SELECT paymentStatus, paymentMethod FROM "Order" WHERE id = $1', [orderId]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+    
+    res.json({ 
+      success: true, 
+      paymentStatus: result.rows[0].paymentstatus,
+      paymentMethod: result.rows[0].paymentmethod
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // Sync database on startup
 syncDatabase().then(() => {
   const port = process.env.PORT || 5000;

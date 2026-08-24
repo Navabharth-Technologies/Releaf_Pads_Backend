@@ -115,6 +115,13 @@ async function syncDatabase() {
           status VARCHAR(50), 
           date TIMESTAMP
       );
+      
+      ALTER TABLE "Order" 
+      ADD COLUMN IF NOT EXISTS paymentMethod VARCHAR(50),
+      ADD COLUMN IF NOT EXISTS razorpayOrderId VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS razorpayPaymentId VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS razorpaySignature VARCHAR(255),
+      ADD COLUMN IF NOT EXISTS paymentVerifiedAt TIMESTAMP;
 
       CREATE TABLE IF NOT EXISTS OrderItem (
           id VARCHAR(50) PRIMARY KEY, 
