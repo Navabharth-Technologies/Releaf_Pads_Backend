@@ -66,7 +66,14 @@ app.put('/api/orders/:id/status', async (req, res) => {
 app.get('/api/delivery-partners', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM DeliveryPartner');
-    res.json(result.rows);
+    const mapped = result.rows.map(dp => ({
+      ...dp,
+      isActive: dp.isactive,
+      availabilityStatus: dp.availabilitystatus,
+      createdAt: dp.createdat,
+      updatedAt: dp.updatedat
+    }));
+    res.json(mapped);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -95,7 +102,13 @@ app.get('/api/customers', async (req, res) => {
     
     const customers = customersResult.rows.map(c => ({
       ...c,
-      addresses: addressesResult.rows.filter(a => a.customerId === c.id)
+      addresses: addressesResult.rows.filter(a => a.customerid === c.id).map(a => ({
+        ...a,
+        customerId: a.customerid,
+        houseNumber: a.housenumber,
+        buildingName: a.buildingname,
+        addressType: a.addresstype
+      }))
     }));
     
     res.json(customers);
@@ -148,7 +161,18 @@ app.post('/api/customers/:id/addresses', async (req, res) => {
 app.get('/api/coupons', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM Coupon');
-    res.json(result.rows);
+    const mapped = result.rows.map(c => ({
+      ...c,
+      discountType: c.discounttype,
+      discountValue: c.discountvalue,
+      minimumOrderValue: c.minimumordervalue,
+      maximumDiscount: c.maximumdiscount,
+      usageLimit: c.usagelimit,
+      usedCount: c.usedcount,
+      influencerId: c.influencerid,
+      influencerName: c.influencername
+    }));
+    res.json(mapped);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -179,8 +203,25 @@ app.get('/api/orders', async (req, res) => {
     const orders = ordersResult.rows.map(order => {
       return {
         ...order,
-        items: itemsResult.rows.filter(i => i.orderId === order.id),
-        trackingEvents: eventsResult.rows.filter(e => e.orderId === order.id)
+        customerId: order.customerid,
+        addressId: order.addressid,
+        deliveryPartnerId: order.deliverypartnerid,
+        couponId: order.couponid,
+        paymentStatus: order.paymentstatus,
+        items: itemsResult.rows.filter(i => i.orderid === order.id).map(i => ({
+          ...i,
+          orderId: i.orderid,
+          productId: i.productid,
+          productName: i.productname,
+          packSize: i.packsize,
+          unitPrice: i.unitprice,
+          totalPrice: i.totalprice,
+          itemStatus: i.itemstatus
+        })),
+        trackingEvents: eventsResult.rows.filter(e => e.orderid === order.id).map(e => ({
+          ...e,
+          orderId: e.orderid
+        }))
       };
     });
     
