@@ -250,7 +250,7 @@ app.post('/api/orders/full', async (req, res) => {
     
     // 1. Ensure Customer Exists (Upsert to prevent foreign key errors from mock data)
     await client.query(`
-      INSERT INTO "Customer" (id, name, phone) 
+      INSERT INTO Customer (id, name, phone) 
       VALUES ($1, 'Guest Customer', '0000000000') 
       ON CONFLICT (id) DO NOTHING
     `, [customerId]);
@@ -258,8 +258,8 @@ app.post('/api/orders/full', async (req, res) => {
     // 2. Ensure Address Exists if provided
     if (addressId) {
       await client.query(`
-        INSERT INTO "Address" (id, "customerId", street, area, city, state, pincode) 
-        VALUES ($1, $2, 'Unknown Street', 'Unknown Area', 'Mysuru', 'Karnataka', '570001') 
+        INSERT INTO Address (id, customerid, name, phone, street, area, city, state, pincode) 
+        VALUES ($1, $2, 'Guest', '0000000000', 'Unknown Street', 'Unknown Area', 'Mysuru', 'Karnataka', '570001') 
         ON CONFLICT (id) DO NOTHING
       `, [addressId, customerId]);
     }
