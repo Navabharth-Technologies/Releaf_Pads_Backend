@@ -2,15 +2,18 @@ const { Pool } = require('pg');
 require('dotenv').config();
 
 const config = {
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  host: process.env.DB_SERVER, // in postgres it's host
-  database: process.env.DB_NAME,
-  port: parseInt(process.env.DB_PORT || '5432'),
+  connectionString: process.env.DATABASE_URL || `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_SERVER}:${process.env.DB_PORT}/${process.env.DB_NAME}`,
   ssl: {
     rejectUnauthorized: false
   }
 };
+
+// If we detect an internal Render URL (which doesn't support SSL), remove the SSL config
+if (config.connectionString && !config.connectionString.includes('render.com') && config.connectionString.includes('dpg-')) {
+  delete config.ssl;
+} else if (process.env.DB_SERVER && !process.env.DB_SERVER.includes('render.com') && process.env.DB_SERVER.includes('dpg-')) {
+  delete config.ssl;
+}
 
 const pool = new Pool(config);
 
