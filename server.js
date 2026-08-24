@@ -248,7 +248,23 @@ app.post('/api/orders/full', async (req, res) => {
     
     await client.query('BEGIN');
     
-    // 1. Insert Order
+    // 1. Ensure Customer Exists (Upsert to prevent foreign key errors from mock data)
+    await client.query(`
+      INSERT INTO "Customer" (id, name, phone) 
+      VALUES ($1, 'Guest Customer', '0000000000') 
+      ON CONFLICT (id) DO NOTHING
+    `, [customerId]);
+
+    // 2. Ensure Address Exists if provided
+    if (addressId) {
+      await client.query(`
+        INSERT INTO "Address" (id, "customerId", street, area, city, state, pincode) 
+        VALUES ($1, $2, 'Unknown Street', 'Unknown Area', 'Mysuru', 'Karnataka', '570001') 
+        ON CONFLICT (id) DO NOTHING
+      `, [addressId, customerId]);
+    }
+    
+    // 3. Insert Order
     await client.query(`
         INSERT INTO "Order" (id, customerId, addressId, couponId, subtotal, delivery, total, paymentStatus, status, date)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
