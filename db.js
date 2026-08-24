@@ -1,8 +1,13 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
+const connString = process.env.DATABASE_URL || 
+  process.env.Internal_Database_URL || 
+  process.env.External_Database_URL || 
+  `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_SERVER}:${process.env.DB_PORT || process.env.DB_Port || 5432}/${process.env.DB_NAME}`;
+
 const config = {
-  connectionString: process.env.DATABASE_URL || `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_SERVER}:${process.env.DB_PORT}/${process.env.DB_NAME}`,
+  connectionString: connString,
   ssl: {
     rejectUnauthorized: false
   }
