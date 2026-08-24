@@ -7,6 +7,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Basic health check route for the root URL
+app.get('/', (req, res) => {
+  res.send('ReLeaf Pads Backend is successfully running!');
+});
+
 // Get all products
 app.get('/api/products', async (req, res) => {
   try {
