@@ -369,10 +369,14 @@ app.post('/api/payments/create-order', async (req, res) => {
   const client = await pool.connect();
   try {
     const { orderId } = req.body;
+    console.log('CREATE-ORDER Webhook hit! Received orderId:', orderId);
     
     // 1. Fetch order from DB
     const orderResult = await client.query('SELECT * FROM "Order" WHERE id = $1', [orderId]);
+    console.log('Query Result count:', orderResult.rows.length);
     if (orderResult.rows.length === 0) {
+      console.log('All Orders inside DB:', (await client.query('SELECT id FROM "Order" ORDER BY date DESC LIMIT 5')).rows);
+      return res.status(404).json({ success: false, message: 'Order not found' });
       return res.status(404).json({ success: false, message: 'Order not found' });
     }
     const order = orderResult.rows[0];
@@ -538,6 +542,8 @@ app.get('/api/payments/:orderId/status', async (req, res) => {
 
 // Sync database on startup
 syncDatabase().then(() => {
-  const port = process.env.PORT || 5000;
-  app.listen(port, () => console.log(`Backend API running on port ${port}`));
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Backend API running on port ${PORT}`);
+  });
 });
