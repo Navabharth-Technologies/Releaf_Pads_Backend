@@ -113,6 +113,33 @@ app.post('/api/admin/reply', async (req, res) => {
 });
 // ----------------------------------------
 
+// --- In-App Mobile Chat API ---
+app.post('/api/chat', async (req, res) => {
+  try {
+    const { message, customerId = 'mobile_user' } = req.body;
+    
+    // Save user's message to DB (using customerId as "phone")
+    await pool.query(
+      `INSERT INTO WhatsAppMessage (id, phone, sender, message) VALUES ($1, $2, $3, $4)`,
+      [`msg_${Date.now()}_u`, customerId, 'user', message]
+    );
+
+    // Generate AI Reply
+    const aiReply = await aiService.generateReply(message);
+
+    // Save AI reply to DB
+    await pool.query(
+      `INSERT INTO WhatsAppMessage (id, phone, sender, message) VALUES ($1, $2, $3, $4)`,
+      [`msg_${Date.now()}_ai`, customerId, 'ai', aiReply]
+    );
+
+    res.json({ success: true, reply: aiReply });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+// ----------------------------------------
+
 // Get Products
 app.get('/api/products', async (req, res) => {
   try {
