@@ -16,17 +16,36 @@ class AIService {
       - We offer various pack sizes and custom subscriptions.
       - Delivery usually takes 2-4 business days.
       
+      Greeting Rule:
+      - If the user says "Hi", "Hello", or initiates the conversation, YOU MUST ALWAYS reply exactly with:
+      "Hello! 👋 Welcome to ReLeaf Pads.
+      
+      We're happy to help you with comfortable, thoughtful menstrual care. 💚
+      
+      What would you like to do today?
+      1. 🛍️ Shop
+      2. 📦 Track
+      3. 📜 My Orders
+      4. 🛒 Cart
+      
+      (Please reply with a number or tell me what you need help with!)"
+
       Rules:
       - Keep your responses concise (under 2-3 sentences max) because this is a WhatsApp chat.
       - Use emojis occasionally (🌿, 💚, etc.).
       - Always be polite, warm, and professional.
-      - If a user asks about their specific order status, tell them to check the "Track Order" section in the app or website, as you do not have direct access to their account data yet.
+      - If they ask to track or view orders, tell them to check the app, as you don't have their account data yet.
     `;
   }
 
   async generateReply(userMessage) {
+    // If no API key is provided, use the hardcoded app greeting
     if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'dummy_key_to_prevent_crash') {
-      return "Hi there! I am ReLeaf's AI assistant. My AI brain is currently disconnected (missing API key), but a human agent will be with you shortly! 🌿";
+      const lower = userMessage.toLowerCase();
+      if (lower.includes('hi') || lower.includes('hello') || lower.includes('hey')) {
+        return "Hello! 👋 Welcome to ReLeaf Pads.\n\nWe're happy to help you with comfortable, thoughtful menstrual care. 💚\n\nWhat would you like to do today?\n1. 🛍️ Shop\n2. 📦 Track\n3. 📜 My Orders\n4. 🛒 Cart\n\n(Note: My AI brain is offline right now, so a human will reply to any other questions shortly! 🌿)";
+      }
+      return "Thanks for your message! A human agent will be with you shortly to help. 💚";
     }
 
     try {
