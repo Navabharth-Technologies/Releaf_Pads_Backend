@@ -12,6 +12,49 @@ app.get('/', (req, res) => {
   res.send('ReLeaf Pads Backend is successfully running with PostgreSQL!');
 });
 
+const whatsappService = require('./services/whatsappService');
+
+// WhatsApp Webhook Verification
+app.get('/api/whatsapp/webhook', (req, res) => {
+  const verify_token = process.env.WHATSAPP_VERIFY_TOKEN;
+
+  let mode = req.query['hub.mode'];
+  let token = req.query['hub.verify_token'];
+  let challenge = req.query['hub.challenge'];
+
+  if (mode && token) {
+    if (mode === 'subscribe' && token === verify_token) {
+      console.log('WEBHOOK_VERIFIED');
+      res.status(200).send(challenge);
+    } else {
+      res.sendStatus(403);
+    }
+  } else {
+    res.status(400).send('Missing parameters');
+  }
+});
+
+// WhatsApp Incoming Messages
+app.post('/api/whatsapp/webhook', (req, res) => {
+  let body = req.body;
+
+  if (body.object) {
+    if (body.entry && body.entry[0].changes && body.entry[0].changes[0] && body.entry[0].changes[0].value.messages && body.entry[0].changes[0].value.messages[0]) {
+      let phone_number_id = body.entry[0].changes[0].value.metadata.phone_number_id;
+      let from = body.entry[0].changes[0].value.messages[0].from; 
+      let msg_body = body.entry[0].changes[0].value.messages[0].text.body;
+
+      console.log(`Received message from ${from}: ${msg_body}`);
+      
+      // Auto-reply example
+      whatsappService.sendTextMessage(from, `Hi there! We received your message: "${msg_body}". We will get back to you shortly.`);
+    }
+    res.sendStatus(200);
+  } else {
+    res.sendStatus(404);
+  }
+});
+
 // Get Products
 app.get('/api/products', async (req, res) => {
   try {
@@ -507,6 +550,23 @@ app.post('/api/payments/verify', async (req, res) => {
             paymentVerifiedAt = NOW()
         WHERE id = $3
       `, [razorpayPaymentId, razorpaySignature, orderId]);
+      
+      // Fetch customer details to send WhatsApp confirmation
+      try {
+        const orderRes = await client.query(`
+          SELECT o.total, c.name, c.phone 
+          FROM "Order" o 
+          JOIN Customer c ON o.customerid = c.id 
+          WHERE o.id = $1
+        `, [orderId]);
+        
+        if (orderRes.rows.length > 0) {
+          const { total, name, phone } = orderRes.rows[0];
+          await whatsappService.sendOrderConfirmation(phone, orderId, name, total);
+        }
+      } catch (waErr) {
+        console.error("Failed to send WhatsApp confirmation:", waErr);
+      }
       
       res.json({ success: true });
     } else {
