@@ -69,6 +69,14 @@ async function syncDatabase() {
           pincode VARCHAR(10)
       );
 
+      CREATE TABLE IF NOT EXISTS WhatsAppMessage (
+          id VARCHAR(100) PRIMARY KEY,
+          phone VARCHAR(20) NOT NULL,
+          sender VARCHAR(50) NOT NULL, -- 'user', 'ai', 'admin'
+          message TEXT NOT NULL,
+          createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
       CREATE TABLE IF NOT EXISTS Address (
           id VARCHAR(50) PRIMARY KEY, 
           customerId VARCHAR(50) REFERENCES Customer(id),

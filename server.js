@@ -13,6 +13,7 @@ app.get('/', (req, res) => {
 });
 
 const whatsappService = require('./services/whatsappService');
+const aiService = require('./services/aiService');
 
 // WhatsApp Webhook Verification
 app.get('/api/whatsapp/webhook', (req, res) => {
@@ -35,25 +36,82 @@ app.get('/api/whatsapp/webhook', (req, res) => {
 });
 
 // WhatsApp Incoming Messages
-app.post('/api/whatsapp/webhook', (req, res) => {
+app.post('/api/whatsapp/webhook', async (req, res) => {
   let body = req.body;
 
   if (body.object) {
     if (body.entry && body.entry[0].changes && body.entry[0].changes[0] && body.entry[0].changes[0].value.messages && body.entry[0].changes[0].value.messages[0]) {
-      let phone_number_id = body.entry[0].changes[0].value.metadata.phone_number_id;
       let from = body.entry[0].changes[0].value.messages[0].from; 
       let msg_body = body.entry[0].changes[0].value.messages[0].text.body;
 
       console.log(`Received message from ${from}: ${msg_body}`);
       
-      // Auto-reply example
-      whatsappService.sendTextMessage(from, `Hi there! We received your message: "${msg_body}". We will get back to you shortly.`);
+      try {
+        // 1. Save incoming message to DB
+        await pool.query(
+          `INSERT INTO WhatsAppMessage (id, phone, sender, message) VALUES ($1, $2, $3, $4)`,
+          [`msg_${Date.now()}_u`, from, 'user', msg_body]
+        );
+
+        // 2. Generate AI Reply
+        const aiReply = await aiService.generateReply(msg_body);
+
+        // 3. Send WhatsApp Message
+        await whatsappService.sendTextMessage(from, aiReply);
+
+        // 4. Save outgoing AI message to DB
+        await pool.query(
+          `INSERT INTO WhatsAppMessage (id, phone, sender, message) VALUES ($1, $2, $3, $4)`,
+          [`msg_${Date.now()}_ai`, from, 'ai', aiReply]
+        );
+      } catch (err) {
+        console.error("Error processing incoming WhatsApp message:", err);
+      }
     }
     res.sendStatus(200);
   } else {
     res.sendStatus(404);
   }
 });
+
+// --- Admin Dashboard APIs for WhatsApp ---
+app.get('/api/admin/conversations', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM WhatsAppMessage ORDER BY createdAt ASC');
+    
+    // Group by phone number
+    const grouped = result.rows.reduce((acc, msg) => {
+      if (!acc[msg.phone]) acc[msg.phone] = [];
+      acc[msg.phone].push(msg);
+      return acc;
+    }, {});
+    
+    res.json(grouped);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/reply', async (req, res) => {
+  try {
+    const { phone, message } = req.body;
+    
+    // Send via WhatsApp
+    await whatsappService.sendTextMessage(phone, message);
+    
+    // Save to DB
+    const id = `msg_${Date.now()}_admin`;
+    await pool.query(
+      `INSERT INTO WhatsAppMessage (id, phone, sender, message) VALUES ($1, $2, $3, $4)`,
+      [id, phone, 'admin', message]
+    );
+    
+    res.json({ success: true, id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+// ----------------------------------------
 
 // Get Products
 app.get('/api/products', async (req, res) => {
