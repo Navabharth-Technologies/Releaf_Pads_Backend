@@ -500,6 +500,7 @@ app.post('/api/webhook', (req, res) => {
 
       // Trigger the auto-reply
       sendWhatsAppMessage(from, "Hello from ReLeaf Pads! 🌿 We have received your message and will get back to you shortly.");
+    }
     // Acknowledge receipt to Meta
     res.sendStatus(200);
   } else {
