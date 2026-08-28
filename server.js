@@ -471,8 +471,35 @@ app.post('/api/webhook', (req, res) => {
       const msgBody = body.entry[0].changes[0].value.messages[0].text?.body; // text message
       
       console.log(`Received message from ${from}: ${msgBody}`);
-      // Add logic to save to database or trigger automated replies here
-    }
+      
+      // --- Send Auto-Reply ---
+      const axios = require('axios'); // Ensure axios is required if you are using it, or use native fetch
+      
+      const sendWhatsAppMessage = async (toPhone, text) => {
+        try {
+          const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+          const token = process.env.WHATSAPP_ACCESS_TOKEN;
+          
+          await fetch(`https://graph.facebook.com/v19.0/${phoneNumberId}/messages`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              messaging_product: 'whatsapp',
+              to: toPhone,
+              text: { body: text }
+            })
+          });
+          console.log(`Auto-reply sent successfully to ${toPhone}`);
+        } catch (error) {
+          console.error('Error sending WhatsApp reply:', error);
+        }
+      };
+
+      // Trigger the auto-reply
+      sendWhatsAppMessage(from, "Hello from ReLeaf Pads! 🌿 We have received your message and will get back to you shortly.");
     // Acknowledge receipt to Meta
     res.sendStatus(200);
   } else {
