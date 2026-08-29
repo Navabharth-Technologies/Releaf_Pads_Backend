@@ -42,7 +42,17 @@ app.post('/api/webhook', async (req, res) => {
   if (body.object) {
     if (body.entry && body.entry[0].changes && body.entry[0].changes[0] && body.entry[0].changes[0].value.messages && body.entry[0].changes[0].value.messages[0]) {
       let from = body.entry[0].changes[0].value.messages[0].from; 
-      let msg_body = body.entry[0].changes[0].value.messages[0].text.body;
+      let msg_body = "";
+      const messageObj = body.entry[0].changes[0].value.messages[0];
+
+      // Handle both normal text and interactive button clicks
+      if (messageObj.type === "text") {
+        msg_body = messageObj.text.body;
+      } else if (messageObj.type === "interactive" && messageObj.interactive.type === "button_reply") {
+        msg_body = messageObj.interactive.button_reply.id; // Or .title
+      } else {
+        msg_body = "Unsupported message format";
+      }
 
       console.log(`Received message from ${from}: ${msg_body}`);
       
@@ -57,12 +67,16 @@ app.post('/api/webhook', async (req, res) => {
         const aiReply = await aiService.generateReply(msg_body);
 
         // 3. Send WhatsApp Message
-        await whatsappService.sendTextMessage(from, aiReply);
+        if (aiReply.type === 'buttons') {
+          await whatsappService.sendInteractiveButtons(from, aiReply.text, aiReply.buttons);
+        } else {
+          await whatsappService.sendTextMessage(from, aiReply.text);
+        }
 
         // 4. Save outgoing AI message to DB
         await pool.query(
           `INSERT INTO WhatsAppMessage (id, phone, sender, message) VALUES ($1, $2, $3, $4)`,
-          [`msg_${Date.now()}_ai`, from, 'ai', aiReply]
+          [`msg_${Date.now()}_ai`, from, 'ai', aiReply.text]
         );
       } catch (err) {
         console.error("Error processing incoming WhatsApp message:", err);
