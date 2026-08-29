@@ -1,68 +1,37 @@
-require('dotenv').config();
-const { OpenAI } = require('openai');
-
 class AIService {
-  constructor() {
-    this.openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY || 'dummy_key_to_prevent_crash'
-    });
-    
-    this.systemPrompt = `
-      You are a friendly and knowledgeable customer support assistant for "ReLeaf Pads", an eco-friendly and sustainable menstruation products brand.
-      
-      Key Information:
-      - ReLeaf Pads are made from biodegradable materials.
-      - They are highly absorbent, comfortable, and safe for the skin (chemical-free).
-      - We offer various pack sizes and custom subscriptions.
-      - Delivery usually takes 2-4 business days.
-      
-      Greeting Rule:
-      - If the user says "Hi", "Hello", or initiates the conversation, YOU MUST ALWAYS reply exactly with:
-      "Hello! 👋 Welcome to ReLeaf Pads.
-      
-      We're happy to help you with comfortable, thoughtful menstrual care. 💚
-      
-      What would you like to do today?
-      1. 🛍️ Shop
-      2. 📦 Track
-      3. 📜 My Orders
-      4. 🛒 Cart
-      
-      (Please reply with a number or tell me what you need help with!)"
-
-      Rules:
-      - Keep your responses concise (under 2-3 sentences max) because this is a WhatsApp chat.
-      - Use emojis occasionally (🌿, 💚, etc.).
-      - Always be polite, warm, and professional.
-      - If they ask to track or view orders, tell them to check the app, as you don't have their account data yet.
-    `;
-  }
+  constructor() {}
 
   async generateReply(userMessage) {
-    // If no API key is provided, use the hardcoded app greeting
-    if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'dummy_key_to_prevent_crash') {
-      const lower = userMessage.toLowerCase();
-      if (lower.includes('hi') || lower.includes('hello') || lower.includes('hey')) {
-        return "Hello! 👋 Welcome to ReLeaf Pads.\n\nWe're happy to help you with comfortable, thoughtful menstrual care. 💚\n\nWhat would you like to do today?\n1. 🛍️ Shop\n2. 📦 Track\n3. 📜 My Orders\n4. 🛒 Cart\n\n(Note: My AI brain is offline right now, so a human will reply to any other questions shortly! 🌿)";
-      }
-      return "Thanks for your message! A human agent will be with you shortly to help. 💚";
+    const msg = userMessage.toLowerCase().trim();
+
+    // Greeting / Main Menu
+    if (msg === 'hi' || msg === 'hello' || msg === 'hey' || msg === 'menu') {
+      return "Hello! 👋 Welcome to ReLeaf Pads.\n\nWe're happy to help you with comfortable, thoughtful menstrual care. 💚\n\nWhat would you like to do today?\n1. 🛍️ Shop\n2. 📦 Track\n3. 📜 My Orders\n4. 🛒 Cart\n\n(Reply with a number 1-4)";
     }
 
-    try {
-      const completion = await this.openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
-        messages: [
-          { role: "system", content: this.systemPrompt },
-          { role: "user", content: userMessage }
-        ],
-        max_tokens: 150,
-      });
-
-      return completion.choices[0].message.content.trim();
-    } catch (error) {
-      console.error("OpenAI Error:", error.message);
-      return "I'm having a little trouble thinking right now. A human will get back to you soon! 💚";
+    // Options
+    if (msg === '1' || msg.includes('shop') || msg.includes('buy') || msg.includes('order')) {
+      return "Awesome! 🛍️ You can browse and buy all our eco-friendly ReLeaf Pads directly on our website: https://releafpads.in \n\nLet us know if you need help choosing a pack size! 🌿";
     }
+    
+    if (msg === '2' || msg.includes('track')) {
+      return "📦 To track your current order, please log into your ReLeaf Pads mobile app or website account and visit the 'Track Order' section. \n\nIf you need manual assistance, reply with 'Help' to speak to an agent.";
+    }
+
+    if (msg === '3' || msg.includes('orders') || msg.includes('history')) {
+      return "📜 You can view your full order history and download invoices inside the ReLeaf Pads app under 'My Orders'.";
+    }
+
+    if (msg === '4' || msg.includes('cart')) {
+      return "🛒 Ready to checkout? Head over to the ReLeaf Pads app or website and click the Cart icon at the top right to complete your purchase!";
+    }
+
+    if (msg === 'help' || msg.includes('human') || msg.includes('agent') || msg.includes('support')) {
+      return "A human agent has been notified and will be with you shortly to help. 💚";
+    }
+
+    // Fallback for anything else
+    return "I didn't quite understand that. 🤔 \n\nPlease reply with 'Hi' to see the main menu, or 'Help' to speak to a human agent.";
   }
 }
 
