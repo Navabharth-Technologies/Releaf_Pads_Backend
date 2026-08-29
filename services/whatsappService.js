@@ -99,6 +99,49 @@ class WhatsAppService {
     }
   }
 
+  async sendCatalogMessage(to, bodyText) {
+    if (!this.token || !this.phoneNumberId) {
+      console.error("WhatsApp credentials are not fully configured in .env");
+      return { success: false, error: "Missing credentials" };
+    }
+
+    try {
+      let cleanPhone = to.replace(/\D/g, '');
+      if (cleanPhone.length === 10) {
+        cleanPhone = '91' + cleanPhone;
+      }
+
+      const payload = {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: cleanPhone,
+        type: "interactive",
+        interactive: {
+          type: "catalog_message",
+          body: {
+            text: bodyText
+          },
+          action: {
+            name: "catalog_message"
+          }
+        }
+      };
+
+      const response = await axios.post(this.baseUrl, payload, {
+        headers: {
+          'Authorization': `Bearer ${this.token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      console.log(`WhatsApp catalog message sent successfully to ${cleanPhone}`);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error("Error sending WhatsApp catalog message:", error?.response?.data || error.message);
+      return { success: false, error: error?.response?.data || error.message };
+    }
+  }
+
   async sendOrderConfirmation(to, orderId, customerName, totalAmount) {
     const message = `🌿 *ReLeaf Pads - Order Confirmed!* 🌿\n\nHi ${customerName},\nYour order (#${orderId}) for ₹${totalAmount} has been successfully placed.\n\nWe will notify you once it is out for delivery. Thank you for choosing sustainable periods! 💚`;
     return this.sendTextMessage(to, message);

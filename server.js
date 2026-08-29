@@ -69,6 +69,8 @@ app.post('/api/webhook', async (req, res) => {
         // 3. Send WhatsApp Message
         if (aiReply.type === 'buttons') {
           await whatsappService.sendInteractiveButtons(from, aiReply.text, aiReply.buttons);
+        } else if (aiReply.type === 'catalog') {
+          await whatsappService.sendCatalogMessage(from, aiReply.text);
         } else {
           await whatsappService.sendTextMessage(from, aiReply.text);
         }
