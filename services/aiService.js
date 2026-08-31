@@ -21,8 +21,8 @@ class AIService {
     // Options (Handles both typed numbers and button click payloads)
     if (msg === '1' || msg.includes('shop') || msg.includes('buy') || msg.includes('order')) {
       return { 
-        type: 'catalog', 
-        text: "Awesome! 🛍️ Click below to view our full ReLeaf Pads catalog and add items to your cart directly in WhatsApp:" 
+        type: 'text', 
+        text: "Awesome! 🛍️ You can browse and buy all our eco-friendly ReLeaf Pads directly on our website: https://releafpads.in \n\nLet us know if you need help choosing a pack size! 🌿" 
       };
     }
     
