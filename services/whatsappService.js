@@ -124,7 +124,7 @@ class WhatsAppService {
           action: {
             name: "catalog_message",
             parameters: {
-              thumbnail_product_retailer_id: "p1" // Required by Meta API
+              thumbnail_product_retailer_id: "m8e1gvvu" // First product Content ID
             }
           }
         }
