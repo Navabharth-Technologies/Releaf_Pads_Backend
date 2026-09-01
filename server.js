@@ -14,6 +14,8 @@ app.get('/', (req, res) => {
 
 const whatsappService = require('./services/whatsappService');
 const aiService = require('./services/aiService');
+const Razorpay = require('razorpay');
+const crypto = require('crypto');
 
 // WhatsApp Webhook Verification
 app.get('/api/webhook', (req, res) => {
@@ -45,11 +47,13 @@ app.post('/api/webhook', async (req, res) => {
       let msg_body = "";
       const messageObj = body.entry[0].changes[0].value.messages[0];
 
-      // Handle both normal text and interactive button clicks
+      // Handle normal text, interactive buttons, and cart orders
       if (messageObj.type === "text") {
         msg_body = messageObj.text.body;
       } else if (messageObj.type === "interactive" && messageObj.interactive.type === "button_reply") {
-        msg_body = messageObj.interactive.button_reply.id; // Or .title
+        msg_body = messageObj.interactive.button_reply.id; 
+      } else if (messageObj.type === "order") {
+        msg_body = "ORDER_RECEIVED";
       } else {
         msg_body = "Unsupported message format";
       }
@@ -57,29 +61,145 @@ app.post('/api/webhook', async (req, res) => {
       console.log(`Received message from ${from}: ${msg_body}`);
       
       try {
-        // 1. Save incoming message to DB
+        // Save incoming message
         await pool.query(
           `INSERT INTO WhatsAppMessage (id, phone, sender, message) VALUES ($1, $2, $3, $4)`,
           [`msg_${Date.now()}_u`, from, 'user', msg_body]
         );
 
-        // 2. Generate AI Reply
-        const aiReply = await aiService.generateReply(msg_body);
+        // Check Session State
+        const sessionRes = await pool.query('SELECT * FROM WhatsAppSession WHERE phone = $1', [from]);
+        let session = sessionRes.rows.length > 0 ? sessionRes.rows[0] : null;
 
-        // 3. Send WhatsApp Message
-        if (aiReply.type === 'buttons') {
-          await whatsappService.sendInteractiveButtons(from, aiReply.text, aiReply.buttons);
-        } else if (aiReply.type === 'catalog') {
-          await whatsappService.sendCatalogMessage(from, aiReply.text);
+        if (messageObj.type === "order") {
+          // Process WhatsApp Cart
+          const productItems = messageObj.order.product_items;
+          let subtotal = 0;
+          const orderItems = [];
+
+          for (const item of productItems) {
+            const productRes = await pool.query('SELECT * FROM Product WHERE id = $1', [item.product_retailer_id]);
+            if (productRes.rows.length > 0) {
+              const product = productRes.rows[0];
+              const quantity = item.quantity;
+              const unitPrice = parseFloat(product.sellingprice);
+              const totalPrice = unitPrice * quantity;
+              subtotal += totalPrice;
+              
+              orderItems.push({
+                productId: product.id,
+                productName: product.name,
+                packSize: product.packsize,
+                quantity,
+                unitPrice,
+                totalPrice
+              });
+            }
+          }
+
+          const orderId = `#RL${Date.now()}`;
+          const total = subtotal; // Assuming free delivery for WhatsApp flow right now
+
+          // 1. Create PENDING Order
+          await pool.query(`
+            INSERT INTO "Order" (id, subtotal, delivery, total, paymentStatus, status, date)
+            VALUES ($1, $2, $3, $4, 'PENDING', 'PENDING_ADDRESS', NOW())
+          `, [orderId, subtotal, 0, total]);
+
+          for (const item of orderItems) {
+            await pool.query(`
+              INSERT INTO OrderItem (id, orderId, productId, productName, packSize, quantity, unitPrice, totalPrice, itemStatus)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'PENDING_ADDRESS')
+            `, [`oi_${Date.now()}_${Math.floor(Math.random()*1000)}`, orderId, item.productId, item.productName, item.packSize, item.quantity, item.unitPrice, item.totalPrice]);
+          }
+
+          // 2. Set Session State
+          await pool.query(`
+            INSERT INTO WhatsAppSession (phone, state, pendingOrderId) 
+            VALUES ($1, 'AWAITING_ADDRESS', $2)
+            ON CONFLICT (phone) DO UPDATE SET state = 'AWAITING_ADDRESS', pendingOrderId = $2, updatedAt = NOW()
+          `, [from, orderId]);
+
+          // 3. Reply
+          const replyText = `🛍️ Awesome! We received your cart.\n\nYour total is ₹${total}.\n\nPlease reply with your full *Delivery Address* (including Pincode) to proceed with payment.`;
+          await whatsappService.sendTextMessage(from, replyText);
+          
+          await pool.query(
+            `INSERT INTO WhatsAppMessage (id, phone, sender, message) VALUES ($1, $2, $3, $4)`,
+            [`msg_${Date.now()}_ai`, from, 'ai', replyText]
+          );
+
+        } else if (session && session.state === 'AWAITING_ADDRESS' && messageObj.type === "text") {
+          // Process Address & Generate Payment Link
+          const addressText = msg_body;
+          const orderId = session.pendingorderid;
+          
+          const orderRes = await pool.query('SELECT * FROM "Order" WHERE id = $1', [orderId]);
+          if (orderRes.rows.length === 0) {
+             await whatsappService.sendTextMessage(from, "Sorry, we couldn't find your pending order. Please add items to your cart again.");
+             await pool.query('DELETE FROM WhatsAppSession WHERE phone = $1', [from]);
+             return res.sendStatus(200);
+          }
+          const order = orderRes.rows[0];
+          
+          // Generate Razorpay Payment Link
+          const razorpay = new Razorpay({
+            key_id: process.env.RAZORPAY_KEY_ID,
+            key_secret: process.env.RAZORPAY_KEY_SECRET,
+          });
+
+          const amountInPaise = Math.round(parseFloat(order.total) * 100);
+          
+          const paymentLink = await razorpay.paymentLink.create({
+            amount: amountInPaise,
+            currency: "INR",
+            accept_partial: false,
+            description: "ReLeaf Pads Order",
+            reference_id: orderId,
+            customer: {
+              contact: from
+            },
+            notify: { sms: false, email: false },
+            reminder_enable: true,
+            notes: { address: addressText }
+          });
+
+          // Update Order
+          await pool.query(`
+            UPDATE "Order" 
+            SET status = 'PENDING_PAYMENT', razorpayOrderId = $1 
+            WHERE id = $2
+          `, [paymentLink.id, orderId]); // Storing plink_id in razorpayOrderId for webhook matching
+          
+          // Clear session
+          await pool.query('DELETE FROM WhatsAppSession WHERE phone = $1', [from]);
+
+          // Reply
+          const replyText = `📍 Address saved!\n\nYour order is ready. Please complete your payment of ₹${order.total} using this secure link:\n\n${paymentLink.short_url}\n\nWe will notify you here once the payment is successful! 💚`;
+          await whatsappService.sendTextMessage(from, replyText);
+          
+          await pool.query(
+            `INSERT INTO WhatsAppMessage (id, phone, sender, message) VALUES ($1, $2, $3, $4)`,
+            [`msg_${Date.now()}_ai`, from, 'ai', replyText]
+          );
+
         } else {
-          await whatsappService.sendTextMessage(from, aiReply.text);
-        }
+          // Normal AI Reply
+          const aiReply = await aiService.generateReply(msg_body);
 
-        // 4. Save outgoing AI message to DB
-        await pool.query(
-          `INSERT INTO WhatsAppMessage (id, phone, sender, message) VALUES ($1, $2, $3, $4)`,
-          [`msg_${Date.now()}_ai`, from, 'ai', aiReply.text]
-        );
+          if (aiReply.type === 'buttons') {
+            await whatsappService.sendInteractiveButtons(from, aiReply.text, aiReply.buttons);
+          } else if (aiReply.type === 'catalog') {
+            await whatsappService.sendCatalogMessage(from, aiReply.text);
+          } else {
+            await whatsappService.sendTextMessage(from, aiReply.text);
+          }
+
+          await pool.query(
+            `INSERT INTO WhatsAppMessage (id, phone, sender, message) VALUES ($1, $2, $3, $4)`,
+            [`msg_${Date.now()}_ai`, from, 'ai', aiReply.text]
+          );
+        }
       } catch (err) {
         console.error("Error processing incoming WhatsApp message:", err);
       }
@@ -445,11 +565,8 @@ app.post('/api/orders/full', async (req, res) => {
   }
 });
 
-// Removed duplicate webhook logic
-
 // --- Razorpay Payment Integration ---
-const Razorpay = require('razorpay');
-const crypto = require('crypto');
+// Razorpay and crypto are now imported at the top
 
 // Health Check
 app.get('/health', (req, res) => {
@@ -546,21 +663,38 @@ app.post('/api/payments/razorpay/webhook', async (req, res) => {
   const client = await pool.connect();
   
   try {
-    if (event === 'payment.captured' || event === 'order.paid') {
-      const paymentEntity = payload.payment.entity;
-      const razorpayOrderId = paymentEntity.order_id;
-      const razorpayPaymentId = paymentEntity.id;
+    if (event === 'payment.captured' || event === 'order.paid' || event === 'payment_link.paid') {
+      const isPaymentLink = event === 'payment_link.paid';
+      const paymentEntity = isPaymentLink ? payload.payment_link.entity : payload.payment.entity;
+      
+      const razorpayOrderId = isPaymentLink ? paymentEntity.id : paymentEntity.order_id;
+      const razorpayPaymentId = isPaymentLink ? paymentEntity.id : paymentEntity.id;
       
       // Update order to PAID
-      await client.query(`
+      const updateRes = await client.query(`
         UPDATE "Order" 
         SET paymentStatus = 'PAID', 
             razorpayPaymentId = $1,
             paymentVerifiedAt = NOW()
         WHERE razorpayOrderId = $2 AND paymentStatus != 'PAID'
+        RETURNING id
       `, [razorpayPaymentId, razorpayOrderId]);
       
       console.log(`Order with Razorpay ID ${razorpayOrderId} marked as PAID via Webhook.`);
+
+      // Send WhatsApp Confirmation if it was a payment link
+      if (updateRes.rows.length > 0 && isPaymentLink) {
+         try {
+            const orderId = updateRes.rows[0].id;
+            const customerPhone = paymentEntity.customer?.contact || paymentEntity.notes?.contact;
+            if (customerPhone) {
+              const msg = `🌿 *ReLeaf Pads - Payment Successful!* 🌿\n\nYour order (#${orderId}) is confirmed! Thank you for choosing sustainable periods! 💚`;
+              await whatsappService.sendTextMessage(customerPhone, msg);
+            }
+         } catch (waErr) {
+            console.error("Failed to send WhatsApp confirmation:", waErr);
+         }
+      }
     } else if (event === 'payment.failed') {
       const paymentEntity = payload.payment.entity;
       const razorpayOrderId = paymentEntity.order_id;

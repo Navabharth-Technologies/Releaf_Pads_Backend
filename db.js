@@ -143,6 +143,13 @@ async function syncDatabase() {
           itemStatus VARCHAR(50)
       );
 
+      CREATE TABLE IF NOT EXISTS WhatsAppSession (
+          phone VARCHAR(20) PRIMARY KEY,
+          state VARCHAR(50) NOT NULL,
+          pendingOrderId VARCHAR(100),
+          updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
       CREATE TABLE IF NOT EXISTS TrackingEvent (
           id VARCHAR(50) PRIMARY KEY, 
           orderId VARCHAR(100) REFERENCES "Order"(id),
