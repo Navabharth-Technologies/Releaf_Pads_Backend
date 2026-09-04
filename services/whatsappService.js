@@ -122,7 +122,10 @@ class WhatsAppService {
             text: bodyText
           },
           action: {
-            name: "catalog_message"
+            name: "catalog_message",
+            parameters: {
+              thumbnail_product_retailer_id: "m8e1gcvvu"
+            }
           }
         }
       };
