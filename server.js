@@ -90,7 +90,17 @@ app.post('/api/webhook', async (req, res) => {
             console.log("Processing cart item:", item);
             const dbProductId = metaToDbMap[item.product_retailer_id] || item.product_retailer_id;
             console.log("Mapped to DB ID:", dbProductId);
-            const productRes = await pool.query('SELECT * FROM Product WHERE id = $1', [dbProductId]);
+            
+            let productRes = await pool.query('SELECT * FROM Product WHERE id = $1', [dbProductId]);
+            
+            // If not found by ID, try finding by matching the selling price!
+            if (productRes.rows.length === 0 && item.item_price) {
+              productRes = await pool.query('SELECT * FROM Product WHERE sellingprice = $1', [item.item_price.toString() + '.00']);
+              if (productRes.rows.length === 0) {
+                 productRes = await pool.query('SELECT * FROM Product WHERE sellingprice = $1', [item.item_price.toString()]);
+              }
+            }
+
             if (productRes.rows.length > 0) {
               const product = productRes.rows[0];
               const quantity = item.quantity;
@@ -108,7 +118,21 @@ app.post('/api/webhook', async (req, res) => {
                 totalPrice
               });
             } else {
-              console.log("Product NOT found in DB!");
+              console.log("Product NOT found in DB by ID or Price!");
+              // Absolute fallback: just use the price Meta sent us!
+              const quantity = item.quantity;
+              const unitPrice = parseFloat(item.item_price || 0);
+              const totalPrice = unitPrice * quantity;
+              subtotal += totalPrice;
+              
+              orderItems.push({
+                productId: item.product_retailer_id,
+                productName: "ReLeaf Pads Pack",
+                packSize: "Custom",
+                quantity,
+                unitPrice,
+                totalPrice
+              });
             }
           }
           console.log("Final Subtotal calculated:", subtotal);
