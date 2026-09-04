@@ -73,7 +73,8 @@ app.post('/api/webhook', async (req, res) => {
 
         if (messageObj.type === "order") {
           // Process WhatsApp Cart
-          const productItems = messageObj.order.product_items;
+          console.log("FULL CART PAYLOAD:", JSON.stringify(messageObj, null, 2));
+          const productItems = messageObj.order.product_items || [];
           let subtotal = 0;
           const orderItems = [];
 
@@ -86,12 +87,15 @@ app.post('/api/webhook', async (req, res) => {
           };
 
           for (const item of productItems) {
+            console.log("Processing cart item:", item);
             const dbProductId = metaToDbMap[item.product_retailer_id] || item.product_retailer_id;
+            console.log("Mapped to DB ID:", dbProductId);
             const productRes = await pool.query('SELECT * FROM Product WHERE id = $1', [dbProductId]);
             if (productRes.rows.length > 0) {
               const product = productRes.rows[0];
               const quantity = item.quantity;
-              const unitPrice = parseFloat(product.sellingprice);
+              const unitPrice = parseFloat(product.sellingprice || product.price || 0);
+              console.log("Found product:", product.name, "Price:", unitPrice);
               const totalPrice = unitPrice * quantity;
               subtotal += totalPrice;
               
@@ -103,8 +107,11 @@ app.post('/api/webhook', async (req, res) => {
                 unitPrice,
                 totalPrice
               });
+            } else {
+              console.log("Product NOT found in DB!");
             }
           }
+          console.log("Final Subtotal calculated:", subtotal);
 
           const orderId = `#RL${Date.now()}`;
           const total = subtotal; // Assuming free delivery for WhatsApp flow right now
