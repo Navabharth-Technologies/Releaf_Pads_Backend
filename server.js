@@ -77,8 +77,17 @@ app.post('/api/webhook', async (req, res) => {
           let subtotal = 0;
           const orderItems = [];
 
+          const metaToDbMap = {
+            'm8e1gcvvu': 'p1',
+            '255lpumfyy': 'p2',
+            '1l47u4063o': 'p3',
+            '5ec4e4ciip': 'p4',
+            'pwf2qmehk': 'p4'
+          };
+
           for (const item of productItems) {
-            const productRes = await pool.query('SELECT * FROM Product WHERE id = $1', [item.product_retailer_id]);
+            const dbProductId = metaToDbMap[item.product_retailer_id] || item.product_retailer_id;
+            const productRes = await pool.query('SELECT * FROM Product WHERE id = $1', [dbProductId]);
             if (productRes.rows.length > 0) {
               const product = productRes.rows[0];
               const quantity = item.quantity;
