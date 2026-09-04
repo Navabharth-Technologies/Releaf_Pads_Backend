@@ -21,8 +21,8 @@ class AIService {
     // Options (Handles both typed numbers and button click payloads)
     if (msg === '1' || msg.includes('shop') || msg.includes('buy') || msg.includes('order')) {
       return { 
-        type: 'text', 
-        text: "Awesome! 🛍️ Check out our eco-friendly ReLeaf Pads on our website: https://releafpads.com (Catalog integration is currently being set up!) 🌿" 
+        type: 'catalog', 
+        text: "Awesome! 🛍️ Check out our eco-friendly ReLeaf Pads in our catalog below. 🌿" 
       };
     }
     
