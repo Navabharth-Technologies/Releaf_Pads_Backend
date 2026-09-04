@@ -109,6 +109,12 @@ async function syncDatabase() {
           influencerId VARCHAR(50), 
           influencerName VARCHAR(255)
       );
+      
+      INSERT INTO Coupon (id, code, type, discountType, discountValue, minimumOrderValue, maximumDiscount, usageLimit, active) 
+      VALUES ('c1', 'WELCOME10', 'PUBLIC', 'PERCENTAGE', 10, 0, 100, 1000, true) ON CONFLICT (id) DO NOTHING;
+      
+      INSERT INTO Coupon (id, code, type, discountType, discountValue, minimumOrderValue, maximumDiscount, usageLimit, active) 
+      VALUES ('c2', 'FLAT50', 'PUBLIC', 'FLAT', 50, 100, 50, 1000, true) ON CONFLICT (id) DO NOTHING;
 
       CREATE TABLE IF NOT EXISTS "Order" (
           id VARCHAR(100) PRIMARY KEY, 

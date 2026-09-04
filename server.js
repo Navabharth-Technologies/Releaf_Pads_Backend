@@ -156,18 +156,67 @@ app.post('/api/webhook', async (req, res) => {
           // 2. Set Session State
           await pool.query(`
             INSERT INTO WhatsAppSession (phone, state, pendingOrderId) 
-            VALUES ($1, 'AWAITING_ADDRESS', $2)
-            ON CONFLICT (phone) DO UPDATE SET state = 'AWAITING_ADDRESS', pendingOrderId = $2, updatedAt = NOW()
+            VALUES ($1, 'AWAITING_COUPON', $2)
+            ON CONFLICT (phone) DO UPDATE SET state = 'AWAITING_COUPON', pendingOrderId = $2, updatedAt = NOW()
           `, [from, orderId]);
 
           // 3. Reply
-          const replyText = `🛍️ Awesome! We received your cart.\n\nYour total is ₹${total}.\n\nPlease reply with your full *Delivery Address* (including Pincode) to proceed with payment.`;
+          const replyText = `🛍️ Awesome! We received your cart.\n\nYour subtotal is ₹${subtotal.toFixed(2)}.\n\nDo you have a promo code? Type it now, or type 'SKIP' to proceed to checkout.`;
           await whatsappService.sendTextMessage(from, replyText);
           
           await pool.query(
             `INSERT INTO WhatsAppMessage (id, phone, sender, message) VALUES ($1, $2, $3, $4)`,
             [`msg_${Date.now()}_ai`, from, 'ai', replyText]
           );
+
+        } else if (session && session.state === 'AWAITING_COUPON' && messageObj.type === "text") {
+          // Process Coupon
+          const couponCode = msg_body.toUpperCase().trim();
+          const orderId = session.pendingorderid;
+          
+          if (couponCode === 'SKIP' || couponCode === 'NO') {
+             await pool.query("UPDATE WhatsAppSession SET state = 'AWAITING_ADDRESS' WHERE phone = $1", [from]);
+             await whatsappService.sendTextMessage(from, "Please reply with your full *Delivery Address* (including Pincode) to proceed with payment.");
+             return res.sendStatus(200);
+          }
+          
+          const couponRes = await pool.query('SELECT * FROM Coupon WHERE UPPER(code) = $1 AND active = true', [couponCode]);
+          if (couponRes.rows.length === 0) {
+             await whatsappService.sendTextMessage(from, "❌ Invalid or expired promo code. Please try again or type 'SKIP'.");
+             return res.sendStatus(200);
+          }
+          
+          const coupon = couponRes.rows[0];
+          const orderRes = await pool.query('SELECT * FROM "Order" WHERE id = $1', [orderId]);
+          if (orderRes.rows.length === 0) {
+             await whatsappService.sendTextMessage(from, "Sorry, we couldn't find your pending order. Please add items to your cart again.");
+             await pool.query('DELETE FROM WhatsAppSession WHERE phone = $1', [from]);
+             return res.sendStatus(200);
+          }
+          const order = orderRes.rows[0];
+          const subtotal = parseFloat(order.subtotal);
+          
+          if (coupon.minimumordervalue && subtotal < parseFloat(coupon.minimumordervalue)) {
+             await whatsappService.sendTextMessage(from, `❌ Minimum order value of ₹${coupon.minimumordervalue} required for this coupon. Please try another or type 'SKIP'.`);
+             return res.sendStatus(200);
+          }
+          
+          let discountAmount = 0;
+          if (coupon.discounttype === 'PERCENTAGE') {
+             discountAmount = (subtotal * parseFloat(coupon.discountvalue)) / 100;
+             if (coupon.maximumdiscount && discountAmount > parseFloat(coupon.maximumdiscount)) {
+               discountAmount = parseFloat(coupon.maximumdiscount);
+             }
+          } else {
+             discountAmount = parseFloat(coupon.discountvalue);
+          }
+          
+          const newTotal = subtotal - discountAmount;
+          await pool.query('UPDATE "Order" SET total = $1, couponId = $2 WHERE id = $3', [newTotal, coupon.id, orderId]);
+          await pool.query("UPDATE WhatsAppSession SET state = 'AWAITING_ADDRESS' WHERE phone = $1", [from]);
+          
+          await whatsappService.sendTextMessage(from, `✅ Coupon applied! You got ₹${discountAmount.toFixed(2)} off.\n\nYour new total is ₹${newTotal.toFixed(2)}.\n\nPlease reply with your full *Delivery Address* (including Pincode) to proceed with payment.`);
+          return res.sendStatus(200);
 
         } else if (session && session.state === 'AWAITING_ADDRESS' && messageObj.type === "text") {
           // Process Address & Generate Payment Link
