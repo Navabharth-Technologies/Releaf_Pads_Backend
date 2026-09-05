@@ -2,13 +2,13 @@ const { Pool, types } = require('pg');
 require('dotenv').config();
 
 // Tell pg to return numeric/decimal values as floats instead of strings
-types.setTypeParser(1700, function(val) {
+types.setTypeParser(1700, function (val) {
   return parseFloat(val);
 });
 
-const connString = process.env.DATABASE_URL || 
-  process.env.Internal_Database_URL || 
-  process.env.External_Database_URL || 
+const connString = process.env.DATABASE_URL ||
+  process.env.Internal_Database_URL ||
+  process.env.External_Database_URL ||
   `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_SERVER}:${process.env.DB_PORT || process.env.DB_Port || 5432}/${process.env.DB_NAME}`;
 
 const config = {
@@ -109,12 +109,6 @@ async function syncDatabase() {
           influencerId VARCHAR(50), 
           influencerName VARCHAR(255)
       );
-      
-      INSERT INTO Coupon (id, code, type, discountType, discountValue, minimumOrderValue, maximumDiscount, usageLimit, active) 
-      VALUES ('c1', 'WELCOME10', 'PUBLIC', 'PERCENTAGE', 10, 0, 100, 1000, true) ON CONFLICT (id) DO NOTHING;
-      
-      INSERT INTO Coupon (id, code, type, discountType, discountValue, minimumOrderValue, maximumDiscount, usageLimit, active) 
-      VALUES ('c2', 'FLAT50', 'PUBLIC', 'FLAT', 50, 100, 50, 1000, true) ON CONFLICT (id) DO NOTHING;
 
       CREATE TABLE IF NOT EXISTS "Order" (
           id VARCHAR(100) PRIMARY KEY, 
