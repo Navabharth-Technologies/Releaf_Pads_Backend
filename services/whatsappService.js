@@ -146,6 +146,17 @@ class WhatsAppService {
     const message = `🌿 *ReLeaf Pads - Order Confirmed!* 🌿\n\nHi ${customerName},\nYour order (#${orderId}) for ₹${totalAmount} has been successfully placed.\n\nWe will notify you once it is out for delivery. Thank you for choosing sustainable periods! 💚`;
     return this.sendTextMessage(to, message);
   }
+
+  async sendAdminAlert(message) {
+    const adminPhone = process.env.ADMIN_WHATSAPP_NUMBER;
+    if (adminPhone) {
+      return this.sendTextMessage(adminPhone, message);
+    }
+  }
+
+  async sendDeliveryAlert(to, message) {
+    return this.sendTextMessage(to, message);
+  }
 }
 
 module.exports = new WhatsAppService();
