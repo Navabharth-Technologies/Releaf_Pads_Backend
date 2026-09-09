@@ -67,100 +67,6 @@ app.post('/api/webhook', async (req, res) => {
           [`msg_${Date.now()}_u`, from, 'user', msg_body]
         );
 
-        if (msg_body.startsWith('/')) {
-          const parts = msg_body.trim().split(' ');
-          const command = parts[0].toLowerCase();
-          
-          let cleanPhone = from.replace(/\D/g, '');
-          if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;
-
-          const adminPhoneStr = (process.env.ADMIN_WHATSAPP_NUMBER || '').replace(/\D/g, '');
-          let adminPhone = adminPhoneStr;
-          if (adminPhone.length === 10) adminPhone = '91' + adminPhone;
-
-          const isOwner = cleanPhone === adminPhone;
-
-          const dpRes = await pool.query('SELECT * FROM DeliveryPartner WHERE phone LIKE $1', [`%${cleanPhone.slice(-10)}`]);
-          const isDeliveryPartner = dpRes.rows.length > 0;
-
-          if (!isOwner && !isDeliveryPartner) {
-             await whatsappService.sendTextMessage(from, "❌ You do not have permission to use management commands.");
-             return res.sendStatus(200);
-          }
-
-          if (isOwner) {
-            if (command === '/orders') {
-               const ordersRes = await pool.query('SELECT id, status, total FROM "Order" WHERE status NOT IN (\'DELIVERED\', \'CANCELLED\')');
-               let txt = "📋 *Active Orders*\n\n";
-               ordersRes.rows.forEach(o => { txt += `📦 ${o.id} - ₹${o.total} - *${o.status}*\n`; });
-               if(ordersRes.rows.length === 0) txt += "No active orders.";
-               await whatsappService.sendTextMessage(from, txt);
-               return res.sendStatus(200);
-            } else if (command === '/accept') {
-               const orderId = parts[1];
-               if(!orderId) { await whatsappService.sendTextMessage(from, "Usage: /accept <OrderID>"); return res.sendStatus(200); }
-               await pool.query('UPDATE "Order" SET status = \'PREPARING\' WHERE id = $1', [orderId]);
-               await whatsappService.sendTextMessage(from, `✅ Order ${orderId} marked as PREPARING.`);
-               return res.sendStatus(200);
-            } else if (command === '/pack') {
-               const orderId = parts[1];
-               if(!orderId) { await whatsappService.sendTextMessage(from, "Usage: /pack <OrderID>"); return res.sendStatus(200); }
-               await pool.query('UPDATE "Order" SET status = \'PACKED\' WHERE id = $1', [orderId]);
-               await whatsappService.sendTextMessage(from, `✅ Order ${orderId} marked as PACKED.`);
-               return res.sendStatus(200);
-            } else if (command === '/assign') {
-               const orderId = parts[1];
-               const dpPhone = parts[2];
-               if(!orderId || !dpPhone) { await whatsappService.sendTextMessage(from, "Usage: /assign <OrderID> <PartnerPhone>"); return res.sendStatus(200); }
-               const dpSelect = await pool.query('SELECT id, name FROM DeliveryPartner WHERE phone LIKE $1', [`%${dpPhone.slice(-10)}`]);
-               if(dpSelect.rows.length === 0) {
-                 await whatsappService.sendTextMessage(from, `❌ No delivery partner found with phone ${dpPhone}`);
-                 return res.sendStatus(200);
-               }
-               const partner = dpSelect.rows[0];
-               await pool.query('UPDATE "Order" SET status = \'ASSIGNED\', deliveryPartnerId = $1 WHERE id = $2', [partner.id, orderId]);
-               await whatsappService.sendTextMessage(from, `✅ Order ${orderId} assigned to ${partner.name}.`);
-               await whatsappService.sendDeliveryAlert(dpPhone, `🚚 *New Delivery Assigned!*\n\nYou have been assigned Order ${orderId}.\nPlease deliver it as soon as possible. Reply with \`/delivered ${orderId}\` when done.`);
-               return res.sendStatus(200);
-            }
-          }
-
-          if (isDeliveryPartner) {
-            if (command === '/deliveries') {
-               const dpId = dpRes.rows[0].id;
-               const ordersRes = await pool.query('SELECT id, status, total FROM "Order" WHERE deliveryPartnerId = $1 AND status IN (\'ASSIGNED\', \'OUT_FOR_DELIVERY\')', [dpId]);
-               let txt = "🚚 *Your Active Deliveries*\n\n";
-               ordersRes.rows.forEach(o => { txt += `📦 ${o.id} - ₹${o.total} - *${o.status}*\n`; });
-               if(ordersRes.rows.length === 0) txt += "No active deliveries.";
-               await whatsappService.sendDeliveryAlert(from, txt);
-               return res.sendStatus(200);
-            } else if (command === '/delivered') {
-               const orderId = parts[1];
-               if(!orderId) { await whatsappService.sendDeliveryAlert(from, "Usage: /delivered <OrderID>"); return res.sendStatus(200); }
-               const dpId = dpRes.rows[0].id;
-               const orderRes = await pool.query('SELECT * FROM "Order" WHERE id = $1 AND deliveryPartnerId = $2', [orderId, dpId]);
-               if(orderRes.rows.length === 0) {
-                 await whatsappService.sendDeliveryAlert(from, `❌ You are not assigned to Order ${orderId}.`);
-                 return res.sendStatus(200);
-               }
-               await pool.query('UPDATE "Order" SET status = \'DELIVERED\' WHERE id = $1', [orderId]);
-               await whatsappService.sendDeliveryAlert(from, `✅ Order ${orderId} successfully marked as DELIVERED.`);
-               
-               // Notify customer
-               const custId = orderRes.rows[0].customerid;
-               const custRes = await pool.query('SELECT phone FROM Customer WHERE id = $1', [custId]);
-               if(custRes.rows.length > 0) {
-                 await whatsappService.sendTextMessage(custRes.rows[0].phone, `🌿 *Delivered!*\n\nYour ReLeaf order ${orderId} has been successfully delivered. Thank you for choosing sustainable periods! 💚`);
-               }
-               return res.sendStatus(200);
-            }
-          }
-
-          // If command not recognized but starts with slash
-          await whatsappService.sendTextMessage(from, "❌ Unknown command.");
-          return res.sendStatus(200);
-        }
-
         // Check Session State
         const sessionRes = await pool.query('SELECT * FROM WhatsAppSession WHERE phone = $1', [from]);
         let session = sessionRes.rows.length > 0 ? sessionRes.rows[0] : null;
@@ -818,7 +724,6 @@ app.post('/api/payments/razorpay/webhook', async (req, res) => {
           if (customerPhone) {
             const msg = `🌿 *ReLeaf Pads - Payment Successful!* 🌿\n\nYour order (#${orderId}) is confirmed! Thank you for choosing sustainable periods! 💚`;
             await whatsappService.sendTextMessage(customerPhone, msg);
-            await whatsappService.sendAdminAlert(`🚨 *New Paid Order!* 🚨\n\nOrder ${orderId} has been paid via WhatsApp Payment Link.\n\nReply with \`/accept ${orderId}\` to start preparing it.`);
           }
         } catch (waErr) {
           console.error("Failed to send WhatsApp confirmation:", waErr);
@@ -878,7 +783,6 @@ app.post('/api/payments/verify', async (req, res) => {
         if (orderRes.rows.length > 0) {
           const { total, name, phone } = orderRes.rows[0];
           await whatsappService.sendOrderConfirmation(phone, orderId, name, total);
-          await whatsappService.sendAdminAlert(`🚨 *New Paid Order!* 🚨\n\nOrder ${orderId} has been paid in the App (₹${total}).\n\nReply with \`/accept ${orderId}\` to start preparing it.`);
         }
       } catch (waErr) {
         console.error("Failed to send WhatsApp confirmation:", waErr);
