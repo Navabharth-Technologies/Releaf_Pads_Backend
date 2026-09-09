@@ -126,13 +126,21 @@ app.post('/api/webhook', async (req, res) => {
           console.log("Final Subtotal calculated:", subtotal);
 
           const orderId = `#RL${Date.now()}`;
+          const customerId = `c_${from}`; // Use phone as ID to keep it simple and consistent
           const total = subtotal; // Assuming free delivery for WhatsApp flow right now
 
-          // 1. Create PENDING Order
+          // 1. Ensure Customer Exists
           await pool.query(`
-            INSERT INTO "Order" (id, subtotal, delivery, total, paymentStatus, status, date)
-            VALUES ($1, $2, $3, $4, 'PENDING', 'PENDING_ADDRESS', NOW())
-          `, [orderId, subtotal, 0, total]);
+            INSERT INTO Customer (id, name, phone) 
+            VALUES ($1, 'WhatsApp Customer', $2) 
+            ON CONFLICT (id) DO NOTHING
+          `, [customerId, from]);
+
+          // 2. Create PENDING Order with customerId
+          await pool.query(`
+            INSERT INTO "Order" (id, customerId, subtotal, delivery, total, paymentStatus, status, date)
+            VALUES ($1, $2, $3, $4, $5, 'PENDING', 'PENDING_ADDRESS', NOW())
+          `, [orderId, customerId, subtotal, 0, total]);
 
           for (const item of orderItems) {
             await pool.query(`
@@ -198,12 +206,22 @@ app.post('/api/webhook', async (req, res) => {
             notes: { address: addressText }
           });
 
-          // Update Order
+          // Save Address to Database
+          const addressId = `addr_${Date.now()}`;
+          const customerId = `c_${from}`; // Same pattern used in cart processing
+          
+          await pool.query(`
+            INSERT INTO Address (id, customerid, name, phone, street, area, city, state, pincode) 
+            VALUES ($1, $2, 'WhatsApp Customer', $3, $4, 'WhatsApp Address', 'Mysuru', 'Karnataka', '570000') 
+            ON CONFLICT (id) DO NOTHING
+          `, [addressId, customerId, from, addressText]);
+
+          // Update Order with addressId and payment info
           await pool.query(`
             UPDATE "Order" 
-            SET status = 'PENDING_PAYMENT', razorpayOrderId = $1 
-            WHERE id = $2
-          `, [paymentLink.id, orderId]); // Storing plink_id in razorpayOrderId for webhook matching
+            SET status = 'PENDING_PAYMENT', razorpayOrderId = $1, addressId = $2 
+            WHERE id = $3
+          `, [paymentLink.id, addressId, orderId]); // Storing plink_id in razorpayOrderId for webhook matching
 
           // Clear session
           await pool.query('DELETE FROM WhatsAppSession WHERE phone = $1', [from]);
@@ -502,11 +520,14 @@ app.post('/api/coupons', async (req, res) => {
 // Get Orders (with items and events)
 app.get('/api/orders', async (req, res) => {
   try {
-    const ordersResult = await pool.query('SELECT * FROM "Order"');
+    const ordersResult = await pool.query('SELECT * FROM "Order" ORDER BY date DESC');
     const itemsResult = await pool.query('SELECT * FROM OrderItem');
     const eventsResult = await pool.query('SELECT * FROM TrackingEvent');
+    const addressesResult = await pool.query('SELECT * FROM Address');
 
     const orders = ordersResult.rows.map(order => {
+      const address = addressesResult.rows.find(a => a.id === order.addressid);
+      
       return {
         ...order,
         customerId: order.customerid,
@@ -514,6 +535,12 @@ app.get('/api/orders', async (req, res) => {
         deliveryPartnerId: order.deliverypartnerid,
         couponId: order.couponid,
         paymentStatus: order.paymentstatus,
+        deliveryAddress: address ? {
+          ...address,
+          customerId: address.customerid,
+          houseNumber: address.housenumber,
+          buildingName: address.buildingname
+        } : null,
         items: itemsResult.rows.filter(i => i.orderid === order.id).map(i => ({
           ...i,
           orderId: i.orderid,
