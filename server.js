@@ -71,6 +71,17 @@ app.post('/api/webhook', async (req, res) => {
         const sessionRes = await pool.query('SELECT * FROM WhatsAppSession WHERE phone = $1', [from]);
         let session = sessionRes.rows.length > 0 ? sessionRes.rows[0] : null;
 
+        // Session Reset logic for keywords
+        if (messageObj.type === "text") {
+          const lowerMsg = msg_body.toLowerCase().trim();
+          if (['hi', 'hello', 'hey', 'menu', 'catalog', 'catalogue', 'cancel', 'reset'].includes(lowerMsg)) {
+            if (session) {
+              await pool.query('DELETE FROM WhatsAppSession WHERE phone = $1', [from]);
+              session = null;
+            }
+          }
+        }
+
         if (messageObj.type === "order") {
           // Process WhatsApp Cart
           const productItems = messageObj.order.product_items;
@@ -164,6 +175,12 @@ app.post('/api/webhook', async (req, res) => {
           });
 
           const amountInPaise = Math.round(parseFloat(order.total) * 100);
+
+          if (!amountInPaise || isNaN(amountInPaise)) {
+            await whatsappService.sendTextMessage(from, "Sorry, there was an issue calculating your order total. Please start again.");
+            await pool.query('DELETE FROM WhatsAppSession WHERE phone = $1', [from]);
+            return res.sendStatus(200);
+          }
 
           const paymentLink = await razorpay.paymentLink.create({
             amount: amountInPaise,
