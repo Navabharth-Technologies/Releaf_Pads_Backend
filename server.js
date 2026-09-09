@@ -118,7 +118,8 @@ app.post('/api/webhook', async (req, res) => {
                 totalPrice
               });
             } else {
-              console.log("Product NOT found in DB!");
+              console.log("Product NOT found in DB! ID:", dbProductId);
+              await whatsappService.sendTextMessage(from, `⚠️ Debug: We couldn't find the product in our database. The catalog sent Retailer ID: '${item.product_retailer_id}'. Please add this to 'metaToDbMap' in backend/server.js!`);
             }
           }
           console.log("Final Subtotal calculated:", subtotal);
