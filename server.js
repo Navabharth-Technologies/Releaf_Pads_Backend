@@ -215,9 +215,6 @@ app.post('/api/webhook', async (req, res) => {
           }
 
           // 2. Set Session State
-          const addressRes = await pool.query('SELECT * FROM Address WHERE customerid = $1 LIMIT 5', [customerId]);
-          const hasAddresses = addressRes.rows.length > 0;
-
           await pool.query(`
             INSERT INTO WhatsAppSession (phone, state, pendingOrderId) 
             VALUES ($1, 'AWAITING_ADDRESS_CHOICE', $2)
@@ -231,10 +228,6 @@ app.post('/api/webhook', async (req, res) => {
             { id: "addr_location", title: "📍 Send Location" },
             { id: "addr_manual", title: "📝 Type Manually" }
           ];
-
-          if (hasAddresses) {
-            buttons.push({ id: "addr_saved", title: "🏠 Saved Address" });
-          }
 
           await whatsappService.sendInteractiveButtons(from, replyText, buttons);
 
@@ -252,17 +245,6 @@ app.post('/api/webhook', async (req, res) => {
           } else if (buttonId === 'addr_manual') {
             await pool.query('UPDATE WhatsAppSession SET state = $1 WHERE phone = $2', ['AWAITING_ADDRESS', from]);
             await whatsappService.sendTextMessage(from, "Please type out your full delivery address (including Pincode).");
-          } else if (buttonId === 'addr_saved') {
-            const customerId = `c_${from}`;
-            const addressRes = await pool.query('SELECT * FROM Address WHERE customerid = $1 LIMIT 5', [customerId]);
-            
-            let listText = "Please reply with the *number* of the address you want to use:\n\n";
-            addressRes.rows.forEach((addr, index) => {
-              listText += `*${index + 1}.* ${addr.housenumber ? addr.housenumber + ', ' : ''}${addr.street}, ${addr.city} - ${addr.pincode}\n`;
-            });
-            
-            await pool.query('UPDATE WhatsAppSession SET state = $1 WHERE phone = $2', ['AWAITING_SAVED_ADDRESS_SELECTION', from]);
-            await whatsappService.sendTextMessage(from, listText);
           }
 
         } else if (session && session.state === 'AWAITING_LOCATION_PIN' && messageObj.type === "location") {
@@ -342,6 +324,51 @@ app.post('/api/webhook', async (req, res) => {
 
           await processOrderPayment(orderId, addressId, addressText, from);
 
+        } else if (msg_body.toLowerCase().includes('track') || msg_body.toLowerCase().trim() === '2') {
+          const customerId = `c_${from}`;
+          const latestOrder = await pool.query('SELECT * FROM "Order" WHERE customerid = $1 ORDER BY date DESC LIMIT 1', [customerId]);
+          
+          if (latestOrder.rows.length === 0) {
+             const text = "You don't have any recent orders to track.";
+             await whatsappService.sendTextMessage(from, text);
+             await pool.query(`INSERT INTO WhatsAppMessage (id, phone, sender, message) VALUES ($1, $2, $3, $4)`, [`msg_${Date.now()}_ai`, from, 'ai', text]);
+          } else {
+             const order = latestOrder.rows[0];
+             let statusText = '';
+             switch(order.status) {
+                case 'PENDING_ADDRESS': statusText = 'Pending Address (Incomplete)'; break;
+                case 'PENDING': statusText = 'Payment Pending'; break;
+                case 'PROCESSING': statusText = 'Processing'; break;
+                case 'OUT_FOR_DELIVERY': statusText = 'Out for Delivery 🛵'; break;
+                case 'DELIVERED': statusText = 'Delivered ✅'; break;
+                case 'CANCELLED': statusText = 'Cancelled ❌'; break;
+                default: statusText = order.status;
+             }
+             
+             let text = `📦 *Order Tracking*\n\nOrder ID: ${order.id}\nDate: ${new Date(order.date).toLocaleDateString()}\nTotal: ₹${order.total}\nStatus: *${statusText}*`;
+             
+             if (order.status === 'PENDING') {
+                text += `\n\nYour payment is pending. Please complete the payment to process your order!`;
+             }
+             await whatsappService.sendTextMessage(from, text);
+             await pool.query(`INSERT INTO WhatsAppMessage (id, phone, sender, message) VALUES ($1, $2, $3, $4)`, [`msg_${Date.now()}_ai`, from, 'ai', text]);
+          }
+        } else if (msg_body.toLowerCase().includes('orders') || msg_body.toLowerCase().includes('history') || msg_body.toLowerCase().trim() === '3') {
+           const customerId = `c_${from}`;
+           const orders = await pool.query('SELECT * FROM "Order" WHERE customerid = $1 ORDER BY date DESC LIMIT 3', [customerId]);
+           
+           if (orders.rows.length === 0) {
+              const text = "You haven't placed any orders yet.";
+              await whatsappService.sendTextMessage(from, text);
+              await pool.query(`INSERT INTO WhatsAppMessage (id, phone, sender, message) VALUES ($1, $2, $3, $4)`, [`msg_${Date.now()}_ai`, from, 'ai', text]);
+           } else {
+              let text = `📜 *Your Recent Orders:*\n\n`;
+              orders.rows.forEach(order => {
+                 text += `• ID: ${order.id}\n  Date: ${new Date(order.date).toLocaleDateString()}\n  Total: ₹${order.total} | Status: ${order.status}\n\n`;
+              });
+              await whatsappService.sendTextMessage(from, text);
+              await pool.query(`INSERT INTO WhatsAppMessage (id, phone, sender, message) VALUES ($1, $2, $3, $4)`, [`msg_${Date.now()}_ai`, from, 'ai', text]);
+           }
         } else {
           // Normal AI Reply
           const aiReply = await aiService.generateReply(msg_body);
