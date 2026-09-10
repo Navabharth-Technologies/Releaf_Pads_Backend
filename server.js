@@ -37,6 +37,57 @@ app.get('/api/webhook', (req, res) => {
   }
 });
 
+// Helper for generating payment links inside webhook
+async function processOrderPayment(orderId, addressId, addressText, from) {
+  const orderRes = await pool.query('SELECT * FROM "Order" WHERE id = $1', [orderId]);
+  if (orderRes.rows.length === 0) {
+    await whatsappService.sendTextMessage(from, "Sorry, we couldn't find your pending order. Please add items to your cart again.");
+    await pool.query('DELETE FROM WhatsAppSession WHERE phone = $1', [from]);
+    return;
+  }
+  const order = orderRes.rows[0];
+
+  const razorpay = new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID,
+    key_secret: process.env.RAZORPAY_KEY_SECRET,
+  });
+
+  const amountInPaise = Math.round(parseFloat(order.total) * 100);
+
+  if (!amountInPaise || isNaN(amountInPaise)) {
+    await whatsappService.sendTextMessage(from, "Sorry, there was an issue calculating your order total. Please start again.");
+    await pool.query('DELETE FROM WhatsAppSession WHERE phone = $1', [from]);
+    return;
+  }
+
+  const paymentLink = await razorpay.paymentLink.create({
+    amount: amountInPaise,
+    currency: "INR",
+    accept_partial: false,
+    description: "ReLeaf Pads Order",
+    reference_id: orderId,
+    customer: { contact: from },
+    notify: { sms: false, email: false },
+    reminder_enable: true,
+    notes: { address: addressText }
+  });
+
+  await pool.query(`
+    UPDATE "Order" 
+    SET status = 'PENDING_PAYMENT', razorpayOrderId = $1, addressId = $2 
+    WHERE id = $3
+  `, [paymentLink.id, addressId, orderId]);
+
+  await pool.query('DELETE FROM WhatsAppSession WHERE phone = $1', [from]);
+
+  const replyText = `📍 Address saved!\n\nYour order is ready. Please complete your payment of ₹${order.total} using this secure link:\n\n${paymentLink.short_url}\n\nWe will notify you here once the payment is successful! 💚`;
+  await whatsappService.sendTextMessage(from, replyText);
+  await pool.query(
+    `INSERT INTO WhatsAppMessage (id, phone, sender, message) VALUES ($1, $2, $3, $4)`,
+    [`msg_${Date.now()}_ai`, from, 'ai', replyText]
+  );
+}
+
 // WhatsApp Incoming Messages
 app.post('/api/webhook', async (req, res) => {
   let body = req.body;
@@ -95,14 +146,29 @@ app.post('/api/webhook', async (req, res) => {
             'fgdblukbef': 'p3',
             '5ec4e4ciip': 'p4',
             'pwf2qmehk': 'p4',
-            '7rg5i23nu1': 'p4'
+            '7rg5i23nu1': 'p4',
+            'w7ab5dvw3y': 'p3',
+            'otvt0dj4l6': 'p4'
           };
 
           for (const item of productItems) {
             console.log("Processing cart item:", item);
-            const dbProductId = metaToDbMap[item.product_retailer_id] || item.product_retailer_id;
+            let dbProductId = metaToDbMap[item.product_retailer_id] || item.product_retailer_id;
             console.log("Mapped to DB ID:", dbProductId);
-            const productRes = await pool.query('SELECT * FROM Product WHERE id = $1', [dbProductId]);
+            
+            let productRes = await pool.query('SELECT * FROM Product WHERE id = $1', [dbProductId]);
+            
+            // Fallback: match by price if ID fails (solves the issue of changing catalog IDs)
+            if (productRes.rows.length === 0 && item.item_price) {
+               const priceMatch = parseFloat(item.item_price);
+               const fallbackRes = await pool.query('SELECT * FROM Product WHERE sellingprice = $1 LIMIT 1', [priceMatch]);
+               if (fallbackRes.rows.length > 0) {
+                 productRes = fallbackRes;
+                 dbProductId = productRes.rows[0].id;
+                 console.log("Dynamic fallback matched product by price:", dbProductId);
+               }
+            }
+
             if (productRes.rows.length > 0) {
               const product = productRes.rows[0];
               const quantity = item.quantity;
@@ -120,8 +186,8 @@ app.post('/api/webhook', async (req, res) => {
                 totalPrice
               });
             } else {
-              console.log("Product NOT found in DB! ID:", dbProductId);
-              await whatsappService.sendTextMessage(from, `⚠️ Debug: We couldn't find the product in our database. The catalog sent Retailer ID: '${item.product_retailer_id}'. Please add this to 'metaToDbMap' in backend/server.js!`);
+              console.log("Product NOT found in DB! ID:", dbProductId, "Price given by WA:", item.item_price);
+              await whatsappService.sendTextMessage(from, `⚠️ Debug: We couldn't find the product in our database. The catalog sent Retailer ID: '${item.product_retailer_id}' (Price: ${item.item_price}). We will temporarily skip this item.`);
             }
           }
           console.log("Final Subtotal calculated:", subtotal);
@@ -151,90 +217,119 @@ app.post('/api/webhook', async (req, res) => {
           }
 
           // 2. Set Session State
+          const addressRes = await pool.query('SELECT * FROM Address WHERE customerid = $1 LIMIT 5', [customerId]);
+          const hasAddresses = addressRes.rows.length > 0;
+
           await pool.query(`
             INSERT INTO WhatsAppSession (phone, state, pendingOrderId) 
-            VALUES ($1, 'AWAITING_ADDRESS', $2)
-            ON CONFLICT (phone) DO UPDATE SET state = 'AWAITING_ADDRESS', pendingOrderId = $2, updatedAt = NOW()
+            VALUES ($1, 'AWAITING_ADDRESS_CHOICE', $2)
+            ON CONFLICT (phone) DO UPDATE SET state = 'AWAITING_ADDRESS_CHOICE', pendingOrderId = $2, updatedAt = NOW()
           `, [from, orderId]);
 
           // 3. Reply
-          const replyText = `🛍️ Awesome! We received your cart.\n\nYour total is ₹${total}.\n\nPlease reply with your full *Delivery Address* (including Pincode) to proceed with payment.`;
-          await whatsappService.sendTextMessage(from, replyText);
+          const replyText = `🛍️ Awesome! We received your cart.\n\nYour total is ₹${total}.\n\nHow would you like to provide your delivery address?`;
+          
+          const buttons = [
+            { id: "addr_location", title: "📍 Send Location" },
+            { id: "addr_manual", title: "📝 Type Manually" }
+          ];
+
+          if (hasAddresses) {
+            buttons.push({ id: "addr_saved", title: "🏠 Saved Address" });
+          }
+
+          await whatsappService.sendInteractiveButtons(from, replyText, buttons);
 
           await pool.query(
             `INSERT INTO WhatsAppMessage (id, phone, sender, message) VALUES ($1, $2, $3, $4)`,
-            [`msg_${Date.now()}_ai`, from, 'ai', replyText]
+            [`msg_${Date.now()}_ai`, from, 'ai', 'Sent Address Options']
           );
 
-        } else if (session && session.state === 'AWAITING_ADDRESS' && messageObj.type === "text") {
-          // Process Address & Generate Payment Link
-          const addressText = msg_body;
+        } else if (session && session.state === 'AWAITING_ADDRESS_CHOICE' && messageObj.type === "interactive") {
+          const buttonId = messageObj.interactive.button_reply.id;
+          
+          if (buttonId === 'addr_location') {
+            await pool.query('UPDATE WhatsAppSession SET state = $1 WHERE phone = $2', ['AWAITING_LOCATION_PIN', from]);
+            await whatsappService.sendTextMessage(from, "Please tap the attachment icon (📎) or '+' and select 'Location' to share your current GPS location.");
+          } else if (buttonId === 'addr_manual') {
+            await pool.query('UPDATE WhatsAppSession SET state = $1 WHERE phone = $2', ['AWAITING_ADDRESS', from]);
+            await whatsappService.sendTextMessage(from, "Please type out your full delivery address (including Pincode).");
+          } else if (buttonId === 'addr_saved') {
+            const customerId = `c_${from}`;
+            const addressRes = await pool.query('SELECT * FROM Address WHERE customerid = $1 LIMIT 5', [customerId]);
+            
+            let listText = "Please reply with the *number* of the address you want to use:\n\n";
+            addressRes.rows.forEach((addr, index) => {
+              listText += `*${index + 1}.* ${addr.housenumber ? addr.housenumber + ', ' : ''}${addr.street}, ${addr.city} - ${addr.pincode}\n`;
+            });
+            
+            await pool.query('UPDATE WhatsAppSession SET state = $1 WHERE phone = $2', ['AWAITING_SAVED_ADDRESS_SELECTION', from]);
+            await whatsappService.sendTextMessage(from, listText);
+          }
+
+        } else if (session && session.state === 'AWAITING_LOCATION_PIN' && messageObj.type === "location") {
+          const location = messageObj.location;
           const orderId = session.pendingorderid;
-
-          const orderRes = await pool.query('SELECT * FROM "Order" WHERE id = $1', [orderId]);
-          if (orderRes.rows.length === 0) {
-            await whatsappService.sendTextMessage(from, "Sorry, we couldn't find your pending order. Please add items to your cart again.");
-            await pool.query('DELETE FROM WhatsAppSession WHERE phone = $1', [from]);
-            return res.sendStatus(200);
-          }
-          const order = orderRes.rows[0];
-
-          // Generate Razorpay Payment Link
-          const razorpay = new Razorpay({
-            key_id: process.env.RAZORPAY_KEY_ID,
-            key_secret: process.env.RAZORPAY_KEY_SECRET,
-          });
-
-          const amountInPaise = Math.round(parseFloat(order.total) * 100);
-
-          if (!amountInPaise || isNaN(amountInPaise)) {
-            await whatsappService.sendTextMessage(from, "Sorry, there was an issue calculating your order total. Please start again.");
-            await pool.query('DELETE FROM WhatsAppSession WHERE phone = $1', [from]);
-            return res.sendStatus(200);
-          }
-
-          const paymentLink = await razorpay.paymentLink.create({
-            amount: amountInPaise,
-            currency: "INR",
-            accept_partial: false,
-            description: "ReLeaf Pads Order",
-            reference_id: orderId,
-            customer: {
-              contact: from
-            },
-            notify: { sms: false, email: false },
-            reminder_enable: true,
-            notes: { address: addressText }
-          });
-
-          // Save Address to Database
           const addressId = `addr_${Date.now()}`;
-          const customerId = `c_${from}`; // Same pattern used in cart processing
+          const customerId = `c_${from}`;
+          const addressText = `GPS Location: ${location.latitude}, ${location.longitude}`;
+
+          await pool.query(`
+            INSERT INTO Address (id, customerid, name, phone, street, area, city, state, pincode, latitude, longitude) 
+            VALUES ($1, $2, 'WhatsApp Customer', $3, 'Current Location', 'GPS Pin', 'Mysuru', 'Karnataka', '570000', $4, $5) 
+            ON CONFLICT (id) DO NOTHING
+          `, [addressId, customerId, from, location.latitude, location.longitude]);
+
+          await processOrderPayment(orderId, addressId, addressText, from);
+
+        } else if (session && session.state === 'AWAITING_SAVED_ADDRESS_SELECTION' && messageObj.type === "text") {
+          const selection = parseInt(msg_body.trim());
+          const orderId = session.pendingorderid;
+          const customerId = `c_${from}`;
+
+          const addressRes = await pool.query('SELECT * FROM Address WHERE customerid = $1 LIMIT 5', [customerId]);
+          if (!isNaN(selection) && selection > 0 && selection <= addressRes.rows.length) {
+            const selectedAddress = addressRes.rows[selection - 1];
+            const addressText = `${selectedAddress.street}, ${selectedAddress.city} - ${selectedAddress.pincode}`;
+            
+            await processOrderPayment(orderId, selectedAddress.id, addressText, from);
+          } else {
+            await whatsappService.sendTextMessage(from, "Invalid selection. Please reply with the valid number from the list.");
+          }
+
+        } else if (session && session.state === 'AWAITING_ADDRESS' && messageObj.type === "text") {
+          const addressText = msg_body.trim();
+          
+          const pincodeMatch = addressText.match(/\b\d{6}\b/);
+          const pincode = pincodeMatch ? pincodeMatch[0] : null;
+
+          if (!pincode) {
+            await whatsappService.sendTextMessage(from, "Please include a valid 6-digit Pincode in your address.");
+            return res.sendStatus(200);
+          }
+
+          if (!pincode.startsWith('570')) {
+            await pool.query('DELETE FROM WhatsAppSession WHERE phone = $1', [from]);
+            await whatsappService.sendTextMessage(from, "Sorry, we currently only deliver via WhatsApp within Mysore city.\n\nPlease visit our website to place an order outside Mysore: https://www.releafpads.in/");
+            return res.sendStatus(200);
+          }
+
+          if (addressText.length < 15) {
+            await whatsappService.sendTextMessage(from, "Great! We deliver to your area.\n\nPlease type out your complete delivery address (House number, Street, Landmark, etc.) along with the pincode.");
+            return res.sendStatus(200);
+          }
+
+          const orderId = session.pendingorderid;
+          const addressId = `addr_${Date.now()}`;
+          const customerId = `c_${from}`;
           
           await pool.query(`
             INSERT INTO Address (id, customerid, name, phone, street, area, city, state, pincode) 
-            VALUES ($1, $2, 'WhatsApp Customer', $3, $4, 'WhatsApp Address', 'Mysuru', 'Karnataka', '570000') 
+            VALUES ($1, $2, 'WhatsApp Customer', $3, $4, 'WhatsApp Address', 'Mysuru', 'Karnataka', $5) 
             ON CONFLICT (id) DO NOTHING
-          `, [addressId, customerId, from, addressText]);
+          `, [addressId, customerId, from, addressText, pincode]);
 
-          // Update Order with addressId and payment info
-          await pool.query(`
-            UPDATE "Order" 
-            SET status = 'PENDING_PAYMENT', razorpayOrderId = $1, addressId = $2 
-            WHERE id = $3
-          `, [paymentLink.id, addressId, orderId]); // Storing plink_id in razorpayOrderId for webhook matching
-
-          // Clear session
-          await pool.query('DELETE FROM WhatsAppSession WHERE phone = $1', [from]);
-
-          // Reply
-          const replyText = `📍 Address saved!\n\nYour order is ready. Please complete your payment of ₹${order.total} using this secure link:\n\n${paymentLink.short_url}\n\nWe will notify you here once the payment is successful! 💚`;
-          await whatsappService.sendTextMessage(from, replyText);
-
-          await pool.query(
-            `INSERT INTO WhatsAppMessage (id, phone, sender, message) VALUES ($1, $2, $3, $4)`,
-            [`msg_${Date.now()}_ai`, from, 'ai', replyText]
-          );
+          await processOrderPayment(orderId, addressId, addressText, from);
 
         } else {
           // Normal AI Reply
