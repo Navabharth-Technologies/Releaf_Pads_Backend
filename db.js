@@ -159,30 +159,6 @@ async function syncDatabase() {
       );
     `);
 
-    // Check if Products exist, if not, insert them
-    const productCheck = await pool.query("SELECT COUNT(*) as count FROM Product");
-    if (parseInt(productCheck.rows[0].count) === 0) {
-      await pool.query(`
-        INSERT INTO Product (id, name, packSize, mrp, sellingPrice, discount, description, imageFallback, stock, stockStatus, totalSold, active)
-        VALUES 
-        ('p1', 'Releaf Cotton Sanitary Pads – 30 Pads', '30 Pads', 414.00, 359.00, 13.00, 'Our most popular pack. Super soft, breathable cotton pads with wings. Ideal for regular to heavy flow.', '#A390E4', 50, 'IN_STOCK', 120, true),
-        ('p2', 'Releaf Cotton Sanitary Pads – 20 Pads', '20 Pads', 278.00, 249.00, 10.00, 'Perfect for your monthly cycle. Comfortable and rash-free experience.', '#A390E4', 35, 'IN_STOCK', 85, true),
-        ('p3', 'Releaf Cotton Sanitary Pads – 10 Pads Pack', '10 Pads', 155.00, 139.00, 10.00, 'Travel-friendly pack. Experience the comfort of pure cotton.', '#A390E4', 0, 'OUT_OF_STOCK', 30, true),
-        ('p4', 'Releaf Cotton Sanitary Pads – 6 Pads Pack', '6 Pads', 85.00, 77.00, 9.00, 'A trial pack to experience true comfort and care.', '#A390E4', 7, 'LOW_STOCK', 15, true);
-      `);
-    }
-
-    // Check if Coupons exist, if not, insert them
-    const couponCheck = await pool.query("SELECT COUNT(*) as count FROM Coupon");
-    if (parseInt(couponCheck.rows[0].count) === 0) {
-      await pool.query(`
-        INSERT INTO Coupon (id, code, type, discountType, discountValue, active)
-        VALUES 
-        ('c1', 'WELCOME10', 'GENERAL', 'PERCENTAGE', 10.00, true),
-        ('c2', 'FREEDEL', 'GENERAL', 'FIXED_AMOUNT', 50.00, true);
-      `);
-    }
-
     console.log('Database tables verified/created successfully!');
   } catch (err) {
     console.error('Database auto-sync failed:', err);
