@@ -5,7 +5,14 @@ const { pool, syncDatabase } = require('./db');
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({
+  verify: (req, res, buf) => {
+    if (req.originalUrl.includes('/webhook')) {
+      req.rawBody = buf.toString();
+    }
+  }
+}));
+app.use(express.urlencoded({ extended: true }));
 
 // Basic health check route for the root URL
 app.get('/', (req, res) => {
@@ -845,11 +852,11 @@ app.post('/api/payments/razorpay/webhook', async (req, res) => {
     return res.status(500).json({ success: false, message: "Webhook secret not configured" });
   }
 
-  const shasum = crypto.createHmac('sha256', secret);
-  shasum.update(JSON.stringify(req.body));
-  const digest = shasum.digest('hex');
+  const expectedSignature = crypto.createHmac('sha256', secret)
+                                  .update(req.rawBody || JSON.stringify(req.body))
+                                  .digest('hex');
 
-  if (digest !== req.headers['x-razorpay-signature']) {
+  if (expectedSignature !== req.headers['x-razorpay-signature']) {
     return res.status(400).json({ success: false, message: "Invalid signature" });
   }
 
@@ -865,10 +872,11 @@ app.post('/api/payments/razorpay/webhook', async (req, res) => {
       const razorpayOrderId = isPaymentLink ? paymentEntity.id : paymentEntity.order_id;
       const razorpayPaymentId = isPaymentLink ? paymentEntity.id : paymentEntity.id;
 
-      // Update order to PAID
+      // Update order to PAID and status to PROCESSING
       const updateRes = await client.query(`
         UPDATE "Order" 
         SET paymentStatus = 'PAID', 
+            status = 'PROCESSING',
             razorpayPaymentId = $1,
             paymentVerifiedAt = NOW()
         WHERE razorpayOrderId = $2 AND paymentStatus != 'PAID'
