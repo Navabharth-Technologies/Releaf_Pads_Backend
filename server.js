@@ -346,6 +346,9 @@ app.post('/api/webhook', async (req, res) => {
                 case 'PENDING_ADDRESS': statusText = 'Pending Address (Incomplete)'; break;
                 case 'PENDING': statusText = 'Payment Pending'; break;
                 case 'PROCESSING': statusText = 'Processing'; break;
+                case 'PREPARING': statusText = 'Preparing Order'; break;
+                case 'PACKED': statusText = 'Packed & Ready'; break;
+                case 'ASSIGNED': statusText = 'Delivery Partner Assigned'; break;
                 case 'OUT_FOR_DELIVERY': statusText = 'Out for Delivery 🛵'; break;
                 case 'DELIVERED': statusText = 'Delivered ✅'; break;
                 case 'CANCELLED': statusText = 'Cancelled ❌'; break;
@@ -357,6 +360,16 @@ app.post('/api/webhook', async (req, res) => {
              if (order.status === 'PENDING') {
                 text += `\n\nYour payment is pending. Please complete the payment to process your order!`;
              }
+             
+             if (order.deliverypartnerid && ['ASSIGNED', 'OUT_FOR_DELIVERY'].includes(order.status)) {
+                try {
+                  const partnerRes = await pool.query('SELECT name, phone FROM DeliveryPartner WHERE id = $1', [order.deliverypartnerid]);
+                  if (partnerRes.rows.length > 0) {
+                     text += `\n\n🚚 *Delivery Partner Details*\nName: ${partnerRes.rows[0].name}\nPhone: ${partnerRes.rows[0].phone}`;
+                  }
+                } catch(e) { console.error(e); }
+             }
+             
              await whatsappService.sendTextMessage(from, text);
              await pool.query(`INSERT INTO WhatsAppMessage (id, phone, sender, message) VALUES ($1, $2, $3, $4)`, [`msg_${Date.now()}_ai`, from, 'ai', text]);
           }
@@ -517,10 +530,44 @@ app.put('/api/orders/:id/status', async (req, res) => {
       query += ', deliveryPartnerId = $2';
       params.push(deliveryPartnerId);
     }
-    query += ` WHERE id = $${params.length + 1}`;
+    query += ` WHERE id = $${params.length + 1} RETURNING customerId, deliveryPartnerId`;
     params.push(id);
 
-    await pool.query(query, params);
+    const updateRes = await pool.query(query, params);
+    
+    // Send WhatsApp Notification to Customer
+    if (updateRes.rows.length > 0) {
+      const orderData = updateRes.rows[0];
+      const customerPhone = orderData.customerid ? orderData.customerid.replace('c_', '') : null;
+      
+      if (customerPhone) {
+        let msg = '';
+        if (status === 'PACKED') {
+          msg = `📦 *Order Update*\n\nYour order (${id}) has been packed and is waiting for a delivery partner!`;
+        } else if (status === 'ASSIGNED' || status === 'OUT_FOR_DELIVERY') {
+          msg = `🚚 *Order Update*\n\nYour order (${id}) is ${status === 'OUT_FOR_DELIVERY' ? 'out for delivery' : 'assigned to a delivery partner'}!`;
+          if (orderData.deliverypartnerid) {
+            try {
+              const dpRes = await pool.query('SELECT name, phone FROM DeliveryPartner WHERE id = $1', [orderData.deliverypartnerid]);
+              if (dpRes.rows.length > 0) {
+                msg += `\n\nDelivery Partner: *${dpRes.rows[0].name}*\nContact: ${dpRes.rows[0].phone}`;
+              }
+            } catch(e) { console.error("Error fetching DP:", e); }
+          }
+        } else if (status === 'DELIVERED') {
+          msg = `✅ *Order Delivered*\n\nYour order (${id}) has been successfully delivered!\n\nThank you for choosing sustainable periods with ReLeaf Pads! 🌿💚`;
+        }
+        
+        if (msg) {
+          try {
+            await whatsappService.sendTextMessage(customerPhone, msg);
+          } catch(waErr) {
+            console.error("Failed to send WhatsApp status notification:", waErr);
+          }
+        }
+      }
+    }
+    
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
