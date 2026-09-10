@@ -146,9 +146,7 @@ app.post('/api/webhook', async (req, res) => {
             'fgdblukbef': 'p3',
             '5ec4e4ciip': 'p4',
             'pwf2qmehk': 'p4',
-            '7rg5i23nu1': 'p4',
-            'w7ab5dvw3y': 'p3',
-            'otvt0dj4l6': 'p4'
+            '7rg5i23nu1': 'p4'
           };
 
           for (const item of productItems) {
