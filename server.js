@@ -261,24 +261,35 @@ app.post('/api/webhook', async (req, res) => {
           const customerId = `c_${from}`;
           const addressText = `GPS Location: ${location.latitude}, ${location.longitude}`;
 
-          let pincode = '570000';
+          let pincode = null;
+          let isMysore = false;
           try {
             const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${location.latitude}&lon=${location.longitude}`);
             if (res.ok) {
               const data = await res.json();
-              if (data && data.address && data.address.postcode) {
+              if (data && data.address) {
                 pincode = data.address.postcode;
+                const city = data.address.city || data.address.state_district || data.address.county || '';
+                if ((pincode && pincode.startsWith('570')) || city.toLowerCase().includes('mysore') || city.toLowerCase().includes('mysuru')) {
+                  isMysore = true;
+                }
               }
             }
           } catch (e) {
             console.error("Geocoding failed:", e);
           }
 
+          if (!isMysore) {
+            await pool.query('DELETE FROM WhatsAppSession WHERE phone = $1', [from]);
+            await whatsappService.sendTextMessage(from, "Sorry, we currently only deliver via WhatsApp within Mysore city.\n\nPlease visit our website to place an order outside Mysore: https://www.releafpads.in/");
+            return res.sendStatus(200);
+          }
+
           await pool.query(`
             INSERT INTO Address (id, customerid, name, phone, street, area, city, state, pincode, latitude, longitude) 
             VALUES ($1, $2, 'WhatsApp Customer', $3, 'Current Location', 'GPS Pin', 'Mysuru', 'Karnataka', $4, $5, $6) 
             ON CONFLICT (id) DO NOTHING
-          `, [addressId, customerId, from, pincode, location.latitude, location.longitude]);
+          `, [addressId, customerId, from, pincode || '570000', location.latitude, location.longitude]);
 
           await processOrderPayment(orderId, addressId, addressText, from);
 
