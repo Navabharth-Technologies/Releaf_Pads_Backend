@@ -243,7 +243,7 @@ app.post('/api/webhook', async (req, res) => {
             [`msg_${Date.now()}_ai`, from, 'ai', 'Sent Address Options']
           );
 
-        } else if (session && session.state === 'AWAITING_ADDRESS_CHOICE' && messageObj.type === "interactive") {
+        } else if (session && ['AWAITING_ADDRESS_CHOICE', 'AWAITING_SAVED_ADDRESS_SELECTION', 'AWAITING_LOCATION_PIN', 'AWAITING_ADDRESS'].includes(session.state) && messageObj.type === "interactive") {
           const buttonId = messageObj.interactive.button_reply.id;
           
           if (buttonId === 'addr_location') {
