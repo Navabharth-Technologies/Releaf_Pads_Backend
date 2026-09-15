@@ -261,15 +261,35 @@ app.post('/api/webhook', async (req, res) => {
           const customerId = `c_${from}`;
           const addressText = `GPS Location: ${location.latitude}, ${location.longitude}`;
 
+          const getDistanceFromLatLonInKm = (lat1, lon1, lat2, lon2) => {
+            const R = 6371; 
+            const dLat = (lat2 - lat1) * (Math.PI / 180);
+            const dLon = (lon2 - lon1) * (Math.PI / 180);
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          };
+
+          const lat = parseFloat(location.latitude);
+          const lon = parseFloat(location.longitude);
+          const distance = getDistanceFromLatLonInKm(lat, lon, 12.305183, 76.641288);
+          console.log(`\n--- LOCATION DEBUG ---`);
+          console.log(`Received GPS: ${lat}, ${lon}`);
+          console.log(`Distance from Mysore: ${distance} km`);
+          
+          let isMysore = distance <= 20; // 20km radius from Mysore center
+          console.log(`Is within 20km?: ${isMysore}`);
+          console.log(`----------------------\n`);
           let pincode = null;
-          let isMysore = false;
+
           try {
-            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${location.latitude}&lon=${location.longitude}`);
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${location.latitude}&lon=${location.longitude}`, {
+              headers: { 'User-Agent': 'ReLeafPads/1.0 (contact@releafpads.in)' }
+            });
             if (res.ok) {
               const data = await res.json();
               if (data && data.address) {
                 pincode = data.address.postcode;
-                const city = data.address.city || data.address.state_district || data.address.county || '';
+                const city = data.address.city || data.address.state_district || data.address.county || data.address.town || data.address.village || data.address.suburb || '';
                 if ((pincode && pincode.startsWith('570')) || city.toLowerCase().includes('mysore') || city.toLowerCase().includes('mysuru')) {
                   isMysore = true;
                 }
@@ -313,6 +333,11 @@ app.post('/api/webhook', async (req, res) => {
           
           const pincodeMatch = addressText.match(/\b\d{6}\b/);
           const pincode = pincodeMatch ? pincodeMatch[0] : null;
+
+          console.log(`\n--- ADDRESS DEBUG ---`);
+          console.log(`Text received: ${addressText}`);
+          console.log(`Extracted Pincode: ${pincode}`);
+          console.log(`---------------------\n`);
 
           if (!pincode) {
             await whatsappService.sendTextMessage(from, "Please include a valid 6-digit Pincode in your address.");
