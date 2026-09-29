@@ -6,13 +6,14 @@ const { pool, syncDatabase } = require('./db');
 const app = express();
 app.use(cors());
 app.use(express.json({
+  limit: '200mb',
   verify: (req, res, buf) => {
     if (req.originalUrl.includes('/webhook')) {
       req.rawBody = buf.toString();
     }
   }
 }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ limit: '200mb', extended: true }));
 
 // Basic health check route for the root URL
 app.get('/', (req, res) => {
@@ -527,11 +528,25 @@ app.get('/api/products', async (req, res) => {
       packSize: p.packsize,
       sellingPrice: p.sellingprice,
       imageFallback: p.imagefallback,
+      imageUrl: p.imageurl,
       stockStatus: p.stockstatus,
       totalSold: p.totalsold
     }));
     res.json(mapped);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update Product Image
+app.put('/api/products/:id/image', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { imageUrl } = req.body;
+    await pool.query('UPDATE Product SET imageUrl = $1 WHERE id = $2', [imageUrl, id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error updating image:", err);
     res.status(500).json({ error: err.message });
   }
 });

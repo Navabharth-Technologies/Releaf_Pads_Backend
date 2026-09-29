@@ -51,6 +51,10 @@ async function syncDatabase() {
           totalSold INT, 
           active BOOLEAN
       );
+      
+      -- Add columns if they don't exist
+      ALTER TABLE Product ADD COLUMN IF NOT EXISTS imageUrl TEXT;
+      ALTER TABLE Product ADD COLUMN IF NOT EXISTS stockStatus VARCHAR(50);
 
       CREATE TABLE IF NOT EXISTS DeliveryPartner (
           id VARCHAR(50) PRIMARY KEY, 
