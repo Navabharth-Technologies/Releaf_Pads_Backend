@@ -1072,10 +1072,19 @@ app.get('/api/payments/:orderId/status', async (req, res) => {
   }
 });
 
+app.post('/api/owner/login', (req, res) => {
+  const { username, password } = req.body;
+  if (username === process.env.OWNER_USERNAME && password === process.env.OWNER_PASSWORD) {
+    res.json({ success: true });
+  } else {
+    res.status(401).json({ success: false, message: 'Invalid credentials' });
+  }
+});
+
 // Sync database on startup
 syncDatabase().then(() => {
   const PORT = process.env.PORT || 5000;
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Backend API running on port ${PORT}`);
+    console.log("Backend API running on port ${PORT}");
   });
 });
