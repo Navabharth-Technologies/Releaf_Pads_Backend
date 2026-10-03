@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_WEBAPP_NAME: releafpadbackend-h0bwephqd3ctazgn
+  AZURE_WEBAPP_NAME: Releafpadbackend
   AZURE_WEBAPP_PACKAGE_PATH: '.'            # set this to the path to your web app project
-  NODE_VERSION: '18.x'                      # set this to the node version to use
+  NODE_VERSION: '24.x'                      # set this to the node version to use
 
 jobs:
   build:
