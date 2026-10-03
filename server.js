@@ -525,12 +525,12 @@ app.get('/api/products', async (req, res) => {
     const result = await pool.query('SELECT * FROM Product');
     const mapped = result.rows.map(p => ({
       ...p,
-      packSize: p.packsize,
-      sellingPrice: p.sellingprice,
-      imageFallback: p.imagefallback,
-      imageUrl: p.imageurl,
-      stockStatus: p.stockstatus,
-      totalSold: p.totalsold
+      packSize: p.packSize || p.packsize,
+      sellingPrice: p.sellingPrice || p.sellingprice,
+      imageFallback: p.imageFallback || p.imagefallback,
+      imageUrl: p.imageUrl || p.imageurl,
+      stockStatus: p.stockStatus || p.stockstatus,
+      totalSold: p.totalSold || p.totalsold
     }));
     res.json(mapped);
   } catch (err) {
@@ -810,21 +810,19 @@ app.post('/api/orders/full', async (req, res) => {
     const { id: reqId, customerId, addressId, couponId, subtotal, delivery, total, paymentStatus, status, items, trackingEvents } = req.body;
     const id = reqId || `#RL${Date.now()}`;
 
-    await client.query('BEGIN');
-
     // 1. Ensure Customer Exists (Upsert to prevent foreign key errors from mock data)
     await client.query(`
+      IF NOT EXISTS (SELECT 1 FROM Customer WHERE id = $1)
       INSERT INTO Customer (id, name, phone) 
       VALUES ($1, 'Guest Customer', '0000000000') 
-      ON CONFLICT (id) DO NOTHING
     `, [customerId]);
 
     // 2. Ensure Address Exists if provided
     if (addressId) {
       await client.query(`
+        IF NOT EXISTS (SELECT 1 FROM Address WHERE id = $1)
         INSERT INTO Address (id, customerid, name, phone, street, area, city, state, pincode) 
         VALUES ($1, $2, 'Guest', '0000000000', 'Unknown Street', 'Unknown Area', 'Mysuru', 'Karnataka', '570001') 
-        ON CONFLICT (id) DO NOTHING
       `, [addressId, customerId]);
     }
 
