@@ -212,7 +212,7 @@ app.post('/api/webhook', async (req, res) => {
           // 2. Create PENDING Order with customerId
           await pool.query(`
             INSERT INTO "Order" (id, customerId, subtotal, delivery, total, paymentStatus, status, date)
-            VALUES ($1, $2, $3, $4, $5, 'PENDING', 'PENDING_ADDRESS', NOW())
+            VALUES ($1, $2, $3, $4, $5, 'PENDING', 'PENDING_ADDRESS', GETDATE())
           `, [orderId, customerId, subtotal, 0, total]);
 
           for (const item of orderItems) {
@@ -226,7 +226,7 @@ app.post('/api/webhook', async (req, res) => {
           await pool.query(`
             INSERT INTO WhatsAppSession (phone, state, pendingOrderId) 
             VALUES ($1, 'AWAITING_ADDRESS_CHOICE', $2)
-            ON CONFLICT (phone) DO UPDATE SET state = 'AWAITING_ADDRESS_CHOICE', pendingOrderId = $2, updatedAt = NOW()
+            ON CONFLICT (phone) DO UPDATE SET state = 'AWAITING_ADDRESS_CHOICE', pendingOrderId = $2, updatedAt = GETDATE()
           `, [from, orderId]);
 
           // 3. Reply
@@ -941,7 +941,7 @@ app.post('/api/payments/razorpay/webhook', async (req, res) => {
         SET paymentStatus = 'PAID', 
             status = 'PROCESSING',
             razorpayPaymentId = $1,
-            paymentVerifiedAt = NOW()
+            paymentVerifiedAt = GETDATE()
         WHERE razorpayOrderId = $2 AND paymentStatus != 'PAID'
         RETURNING id
       `, [razorpayPaymentId, razorpayOrderId]);
@@ -999,7 +999,7 @@ app.post('/api/payments/verify', async (req, res) => {
         SET paymentStatus = 'PAID', 
             razorpayPaymentId = $1,
             razorpaySignature = $2,
-            paymentVerifiedAt = NOW()
+            paymentVerifiedAt = GETDATE()
         WHERE id = $3
       `, [razorpayPaymentId, razorpaySignature, orderId]);
 
