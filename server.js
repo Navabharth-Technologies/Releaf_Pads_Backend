@@ -204,9 +204,11 @@ app.post('/api/webhook', async (req, res) => {
 
           // 1. Ensure Customer Exists
           await pool.query(`
-            INSERT INTO Customer (id, name, phone) 
-            VALUES ($1, 'WhatsApp Customer', $2) 
-            ON CONFLICT (id) DO NOTHING
+            IF NOT EXISTS (SELECT 1 FROM Customer WHERE id = $1)
+            BEGIN
+              INSERT INTO Customer (id, name, phone) 
+              VALUES ($1, 'WhatsApp Customer', $2) 
+            END
           `, [customerId, from]);
 
           // 2. Create PENDING Order with customerId
@@ -224,9 +226,15 @@ app.post('/api/webhook', async (req, res) => {
 
           // 2. Set Session State
           await pool.query(`
-            INSERT INTO WhatsAppSession (phone, state, pendingOrderId) 
-            VALUES ($1, 'AWAITING_ADDRESS_CHOICE', $2)
-            ON CONFLICT (phone) DO UPDATE SET state = 'AWAITING_ADDRESS_CHOICE', pendingOrderId = $2, updatedAt = GETDATE()
+            IF EXISTS (SELECT 1 FROM WhatsAppSession WHERE phone = $1)
+            BEGIN
+              UPDATE WhatsAppSession SET state = 'AWAITING_ADDRESS_CHOICE', pendingOrderId = $2, updatedAt = GETDATE() WHERE phone = $1
+            END
+            ELSE
+            BEGIN
+              INSERT INTO WhatsAppSession (phone, state, pendingOrderId) 
+              VALUES ($1, 'AWAITING_ADDRESS_CHOICE', $2)
+            END
           `, [from, orderId]);
 
           // 3. Reply
@@ -307,9 +315,11 @@ app.post('/api/webhook', async (req, res) => {
           }
 
           await pool.query(`
-            INSERT INTO Address (id, customerid, name, phone, street, area, city, state, pincode, latitude, longitude) 
-            VALUES ($1, $2, 'WhatsApp Customer', $3, 'Current Location', 'GPS Pin', 'Mysuru', 'Karnataka', $4, $5, $6) 
-            ON CONFLICT (id) DO NOTHING
+            IF NOT EXISTS (SELECT 1 FROM Address WHERE id = $1)
+            BEGIN
+              INSERT INTO Address (id, customerId, name, phone, street, area, city, state, pincode, latitude, longitude) 
+              VALUES ($1, $2, 'WhatsApp Customer', $3, 'Current Location', 'GPS Pin', 'Mysuru', 'Karnataka', $4, $5, $6) 
+            END
           `, [addressId, customerId, from, pincode || '570000', location.latitude, location.longitude]);
 
           await processOrderPayment(orderId, addressId, addressText, from);
@@ -361,9 +371,11 @@ app.post('/api/webhook', async (req, res) => {
           const customerId = `c_${from}`;
           
           await pool.query(`
-            INSERT INTO Address (id, customerid, name, phone, street, area, city, state, pincode) 
-            VALUES ($1, $2, 'WhatsApp Customer', $3, $4, 'WhatsApp Address', 'Mysuru', 'Karnataka', $5) 
-            ON CONFLICT (id) DO NOTHING
+            IF NOT EXISTS (SELECT 1 FROM Address WHERE id = $1)
+            BEGIN
+              INSERT INTO Address (id, customerId, name, phone, street, area, city, state, pincode) 
+              VALUES ($1, $2, 'WhatsApp Customer', $3, $4, 'WhatsApp Address', 'Mysuru', 'Karnataka', $5) 
+            END
           `, [addressId, customerId, from, addressText, pincode]);
 
           await processOrderPayment(orderId, addressId, addressText, from);
