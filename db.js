@@ -7,8 +7,8 @@ const config = {
   server: process.env.DB_SERVER, 
   database: process.env.DB_NAME || 'Releaf_Pads',
   options: {
-    encrypt: false, 
-    trustServerCertificate: true 
+    encrypt: true, 
+    trustServerCertificate: false 
   },
   pool: {
     max: 10,
