@@ -167,7 +167,7 @@ app.post('/api/webhook', async (req, res) => {
             // Fallback: match by price if ID fails (solves the issue of changing catalog IDs)
             if (productRes.rows.length === 0 && item.item_price) {
                const priceMatch = parseFloat(item.item_price);
-               const fallbackRes = await pool.query('SELECT * FROM Product WHERE sellingprice = $1 LIMIT 1', [priceMatch]);
+               const fallbackRes = await pool.query('SELECT TOP 1 * FROM Product WHERE sellingprice = $1', [priceMatch]);
                if (fallbackRes.rows.length > 0) {
                  productRes = fallbackRes;
                  dbProductId = productRes.rows[0].id;
@@ -329,7 +329,7 @@ app.post('/api/webhook', async (req, res) => {
           const orderId = session.pendingOrderId;
           const customerId = `c_${from}`;
 
-          const addressRes = await pool.query('SELECT * FROM Address WHERE customerid = $1 LIMIT 5', [customerId]);
+          const addressRes = await pool.query('SELECT TOP 5 * FROM Address WHERE customerid = $1', [customerId]);
           if (!isNaN(selection) && selection > 0 && selection <= addressRes.rows.length) {
             const selectedAddress = addressRes.rows[selection - 1];
             const addressText = `${selectedAddress.street}, ${selectedAddress.city} - ${selectedAddress.pincode}`;
@@ -382,7 +382,7 @@ app.post('/api/webhook', async (req, res) => {
 
         } else if (msg_body.toLowerCase().includes('track') || msg_body.toLowerCase().trim() === '2') {
           const customerId = `c_${from}`;
-          const latestOrder = await pool.query('SELECT * FROM "Order" WHERE customerid = $1 ORDER BY date DESC LIMIT 1', [customerId]);
+          const latestOrder = await pool.query('SELECT TOP 1 * FROM "Order" WHERE customerid = $1 ORDER BY date DESC', [customerId]);
           
           if (latestOrder.rows.length === 0) {
              const text = "You don't have any recent orders to track.";
@@ -424,7 +424,7 @@ app.post('/api/webhook', async (req, res) => {
           }
         } else if (msg_body.toLowerCase().includes('orders') || msg_body.toLowerCase().includes('history') || msg_body.toLowerCase().trim() === '3') {
            const customerId = `c_${from}`;
-           const orders = await pool.query('SELECT * FROM "Order" WHERE customerid = $1 ORDER BY date DESC LIMIT 3', [customerId]);
+           const orders = await pool.query('SELECT TOP 3 * FROM "Order" WHERE customerid = $1 ORDER BY date DESC', [customerId]);
            
            if (orders.rows.length === 0) {
               const text = "You haven't placed any orders yet.";
@@ -864,7 +864,7 @@ app.post('/api/payments/create-order', async (req, res) => {
     const orderResult = await client.query('SELECT * FROM "Order" WHERE id = $1', [orderId]);
     console.log('Query Result count:', orderResult.rows.length);
     if (orderResult.rows.length === 0) {
-      console.log('All Orders inside DB:', (await client.query('SELECT id FROM "Order" ORDER BY date DESC LIMIT 5')).rows);
+      console.log('All Orders inside DB:', (await client.query('SELECT TOP 5 id FROM "Order" ORDER BY date DESC')).rows);
       return res.status(404).json({ success: false, message: 'Order not found' });
       return res.status(404).json({ success: false, message: 'Order not found' });
     }
