@@ -178,7 +178,7 @@ app.post('/api/webhook', async (req, res) => {
             if (productRes.rows.length > 0) {
               const product = productRes.rows[0];
               const quantity = item.quantity;
-              const unitPrice = parseFloat(product.sellingprice || product.price || 0);
+              const unitPrice = parseFloat(product.sellingPrice || product.price || 0);
               console.log("Found product:", product.name, "Price:", unitPrice);
               const totalPrice = unitPrice * quantity;
               subtotal += totalPrice;
@@ -186,7 +186,7 @@ app.post('/api/webhook', async (req, res) => {
               orderItems.push({
                 productId: product.id,
                 productName: product.name,
-                packSize: product.packsize,
+                packSize: product.packSize,
                 quantity,
                 unitPrice,
                 totalPrice
@@ -257,7 +257,7 @@ app.post('/api/webhook', async (req, res) => {
 
         } else if (session && session.state === 'AWAITING_LOCATION_PIN' && messageObj.type === "location") {
           const location = messageObj.location;
-          const orderId = session.pendingorderid;
+          const orderId = session.pendingOrderId;
           const addressId = `addr_${Date.now()}`;
           const customerId = `c_${from}`;
           const addressText = `GPS Location: ${location.latitude}, ${location.longitude}`;
@@ -316,7 +316,7 @@ app.post('/api/webhook', async (req, res) => {
 
         } else if (session && session.state === 'AWAITING_SAVED_ADDRESS_SELECTION' && messageObj.type === "text") {
           const selection = parseInt(msg_body.trim());
-          const orderId = session.pendingorderid;
+          const orderId = session.pendingOrderId;
           const customerId = `c_${from}`;
 
           const addressRes = await pool.query('SELECT * FROM Address WHERE customerid = $1 LIMIT 5', [customerId]);
@@ -356,7 +356,7 @@ app.post('/api/webhook', async (req, res) => {
             return res.sendStatus(200);
           }
 
-          const orderId = session.pendingorderid;
+          const orderId = session.pendingOrderId;
           const addressId = `addr_${Date.now()}`;
           const customerId = `c_${from}`;
           
@@ -398,9 +398,9 @@ app.post('/api/webhook', async (req, res) => {
                 text += `\n\nYour payment is pending. Please complete the payment to process your order!`;
              }
              
-             if (order.deliverypartnerid && ['ASSIGNED', 'OUT_FOR_DELIVERY'].includes(order.status)) {
+             if (order.deliveryPartnerId && ['ASSIGNED', 'OUT_FOR_DELIVERY'].includes(order.status)) {
                 try {
-                  const partnerRes = await pool.query('SELECT name, phone FROM DeliveryPartner WHERE id = $1', [order.deliverypartnerid]);
+                  const partnerRes = await pool.query('SELECT name, phone FROM DeliveryPartner WHERE id = $1', [order.deliveryPartnerId]);
                   if (partnerRes.rows.length > 0) {
                      text += `\n\n🚚 *Delivery Partner Details*\nName: ${partnerRes.rows[0].name}\nPhone: ${partnerRes.rows[0].phone}`;
                   }
@@ -583,7 +583,7 @@ app.put('/api/orders/:id/status', async (req, res) => {
     // Send WhatsApp Notification to Customer
     if (updateRes.rows.length > 0) {
       const orderData = updateRes.rows[0];
-      const customerPhone = orderData.customerid ? orderData.customerid.replace('c_', '') : null;
+      const customerPhone = orderData.customerId ? orderData.customerId.replace('c_', '') : null;
       
       if (customerPhone) {
         let msg = '';
@@ -591,9 +591,9 @@ app.put('/api/orders/:id/status', async (req, res) => {
           msg = `📦 *Order Update*\n\nYour order (${id}) has been packed and is waiting for a delivery partner!`;
         } else if (status === 'ASSIGNED' || status === 'OUT_FOR_DELIVERY') {
           msg = `🚚 *Order Update*\n\nYour order (${id}) is ${status === 'OUT_FOR_DELIVERY' ? 'out for delivery' : 'assigned to a delivery partner'}!`;
-          if (orderData.deliverypartnerid) {
+          if (orderData.deliveryPartnerId) {
             try {
-              const dpRes = await pool.query('SELECT name, phone FROM DeliveryPartner WHERE id = $1', [orderData.deliverypartnerid]);
+              const dpRes = await pool.query('SELECT name, phone FROM DeliveryPartner WHERE id = $1', [orderData.deliveryPartnerId]);
               if (dpRes.rows.length > 0) {
                 msg += `\n\nDelivery Partner: *${dpRes.rows[0].name}*\nContact: ${dpRes.rows[0].phone}`;
               }
