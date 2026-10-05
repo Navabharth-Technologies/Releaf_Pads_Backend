@@ -734,6 +734,17 @@ app.post('/api/coupons', async (req, res) => {
   }
 });
 
+// Delete Coupon
+app.delete('/api/coupons/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.query('DELETE FROM Coupon WHERE id = $1', [id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Get Orders (with items and events)
 app.get('/api/orders', async (req, res) => {
   try {
