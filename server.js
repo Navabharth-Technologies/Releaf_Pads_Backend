@@ -564,8 +564,8 @@ app.post('/api/orders', async (req, res) => {
     const orderId = reqId || `o_${Date.now()}`;
     const result = await pool.query(`
         INSERT INTO "Order" (id, customerId, addressId, subtotal, total, paymentStatus, status, date)
+        OUTPUT inserted.id
         VALUES ($1, $2, $3, $4, $5, 'PAID', $6, $7)
-        RETURNING id
       `, [orderId, customerId, addressId, subtotal, total, status, new Date(date)]);
     res.json({ id: result.rows[0].id });
   } catch (err) {
@@ -587,7 +587,7 @@ app.put('/api/orders/:id/status', async (req, res) => {
       query += ', deliveryPartnerId = $2';
       params.push(deliveryPartnerId);
     }
-    query += ` WHERE id = $${params.length + 1} RETURNING customerId, deliveryPartnerId`;
+    query += ` OUTPUT inserted.customerId, inserted.deliveryPartnerId WHERE id = $${params.length + 1}`;
     params.push(id);
 
     const updateRes = await pool.query(query, params);
@@ -954,8 +954,8 @@ app.post('/api/payments/razorpay/webhook', async (req, res) => {
             status = 'PROCESSING',
             razorpayPaymentId = $1,
             paymentVerifiedAt = GETDATE()
+        OUTPUT inserted.id
         WHERE razorpayOrderId = $2 AND paymentStatus != 'PAID'
-        RETURNING id
       `, [razorpayPaymentId, razorpayOrderId]);
 
       console.log(`Order with Razorpay ID ${razorpayOrderId} marked as PAID via Webhook.`);
