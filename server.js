@@ -1078,6 +1078,6 @@ app.post('/api/owner/login', (req, res) => {
 syncDatabase().then(() => {
   const PORT = process.env.PORT || 5000;
   app.listen(PORT, '0.0.0.0', () => {
-    console.log("Backend API running on port ${PORT}");
+    console.log(`Backend API running on port ${PORT}`);
   });
 });
