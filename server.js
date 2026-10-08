@@ -1074,6 +1074,29 @@ app.post('/api/owner/login', (req, res) => {
   }
 });
 
+app.post('/api/owner/clear-db', async (req, res) => {
+  const { username, password } = req.body;
+  if (username === process.env.OWNER_USERNAME && password === process.env.OWNER_PASSWORD) {
+    try {
+      const tablesToDrop = [
+        'TrackingEvent', 'WhatsAppSession', 'OrderItem', '[Order]', 
+        'Address', 'WhatsAppMessage', 'Coupon', 'Customer', 
+        'DeliveryPartner', 'Product'
+      ];
+      for (const table of tablesToDrop) {
+        try {
+          await pool.query(`DROP TABLE IF EXISTS ${table}`);
+        } catch (e) { console.error(e); }
+      }
+      res.json({ success: true, message: 'Database cleared completely.' });
+    } catch (err) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  } else {
+    res.status(401).json({ success: false, message: 'Invalid credentials' });
+  }
+});
+
 // Sync database on startup
 syncDatabase().then(() => {
   const PORT = process.env.PORT || 5000;
