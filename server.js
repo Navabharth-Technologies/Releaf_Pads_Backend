@@ -651,7 +651,7 @@ app.post('/api/delivery-partners', async (req, res) => {
     const id = reqId || `dp_${Date.now()}`;
     await pool.query(`
         INSERT INTO DeliveryPartner (id, name, phone, isActive, availabilityStatus, createdAt, updatedAt)
-        VALUES ($1, $2, $3, true, 'AVAILABLE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES ($1, $2, $3, 1, 'AVAILABLE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       `, [id, name, phone]);
     res.json({ success: true, id });
   } catch (err) {
