@@ -1009,6 +1009,7 @@ app.post('/api/payments/verify', async (req, res) => {
       await client.query(`
         UPDATE "Order" 
         SET paymentStatus = 'PAID', 
+            status = 'PROCESSING',
             razorpayPaymentId = $1,
             razorpaySignature = $2,
             paymentVerifiedAt = GETDATE()
