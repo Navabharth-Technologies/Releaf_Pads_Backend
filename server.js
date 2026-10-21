@@ -544,6 +544,32 @@ app.get('/api/products', async (req, res) => {
   }
 });
 
+// Update Product Stock
+app.put('/api/products/:id/stock', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { stock, stockStatus } = req.body;
+    await pool.query('UPDATE Product SET stock = $1, stockStatus = $2 WHERE id = $3', [stock, stockStatus, id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error updating stock:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update Product Active Status
+app.put('/api/products/:id/active', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { active } = req.body;
+    await pool.query('UPDATE Product SET active = $1 WHERE id = $2', [active ? 1 : 0, id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error updating active status:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Update Product Image
 app.put('/api/products/:id/image', async (req, res) => {
   try {

@@ -19,6 +19,10 @@ async function restoreProducts() {
       IF NOT EXISTS (SELECT 1 FROM Product WHERE id = 'p4')
       INSERT INTO Product (id, name, packSize, mrp, sellingPrice, discount, description, imageFallback, stock, stockStatus, totalSold, active)
       VALUES ('p4', 'Releaf Cotton Sanitary Pads – 6 Pads Pack', '6 Pads', 85.00, 77.00, 9.00, 'A trial pack to experience true comfort and care.', '#A390E4', 7, 'LOW_STOCK', 15, 1);
+
+      IF NOT EXISTS (SELECT 1 FROM Product WHERE id = 'p_panty')
+      INSERT INTO Product (id, name, packSize, mrp, sellingPrice, discount, description, imageFallback, stock, stockStatus, totalSold, active)
+      VALUES ('p_panty', 'Releaf Period Panty', '1 Panty', 75.00, 50.00, 33.00, 'Comfortable, leak-proof Releaf Period Panty designed for ultimate comfort and protection during your period cycle.', '#E87A90', 50, 'IN_STOCK', 0, 1);
     `);
     console.log("Products successfully restored!");
     process.exit(0);
