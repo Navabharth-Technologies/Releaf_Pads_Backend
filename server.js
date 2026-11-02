@@ -20,6 +20,12 @@ app.get('/', (req, res) => {
   res.send('ReLeaf Pads Backend is successfully running with PostgreSQL!');
 });
 
+// Public Privacy Policy endpoint for Google Play Store Console compliance
+const path = require('path');
+app.get('/privacy-policy', (req, res) => {
+  res.sendFile(path.join(__dirname, 'privacy-policy.html'));
+});
+
 const whatsappService = require('./services/whatsappService');
 const aiService = require('./services/aiService');
 const Razorpay = require('razorpay');
